@@ -1,0 +1,3 @@
+date,observed_discharge_m3s,quality_flag
+2019-01-01,12345.6,example_only
+2019-01-02,12410.2,example_only

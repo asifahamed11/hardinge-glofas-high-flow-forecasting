@@ -1,0 +1,167 @@
+period:
+  start: "1981-01-01"
+  end: "2023-12-31"
+
+paths:
+  raw_era5_daily: "data/raw/era5_land/daily_mean"
+  raw_era5_accumulations: "data/raw/era5_land/daily_sum"
+  raw_glofas: "data/raw/glofas"
+  raw_nasa_power: "data/raw/nasa_power/nasa_power_daily.csv"
+  master_dataset_csv: "data/processed/master_daily.csv"
+  master_dataset_parquet: "data/processed/master_daily.parquet"
+  master_dataset_metadata: "outputs/metadata/master_dataset.json"
+  labeled_dataset_csv: "data/processed/labeled_daily.csv"
+  labeled_dataset_parquet: "data/processed/labeled_daily.parquet"
+  label_metadata: "outputs/metadata/high_flow_labels.json"
+  models: "outputs/models"
+  tables: "outputs/tables"
+  figures: "outputs/figures"
+  predictions: "outputs/predictions"
+  experiment_metadata: "outputs/metadata/experiment.json"
+
+study_area:
+  hardinge_bridge:
+    name: "Hardinge Bridge"
+    longitude: 89.03
+    latitude: 24.07
+  era5_area: [26.6, 88.0, 20.7, 92.6]
+  glofas_area: [24.2, 88.9, 23.9, 89.2]
+  points:
+    - name: "Hardinge Bridge analysis point"
+      source: "Hardinge Bridge"
+      role: "GloFAS extraction and NASA POWER point"
+      longitude: 89.03
+      latitude: 24.07
+      marker: "star"
+      color_key: "vermillion"
+  domains:
+    - name: "ERA5-Land averaging domain"
+      source: "ERA5-Land"
+      area: [26.6, 88.0, 20.7, 92.6]
+      line_style: "dash"
+      color_key: "blue"
+    - name: "GloFAS download domain"
+      source: "GloFAS"
+      area: [24.2, 88.9, 23.9, 89.2]
+      line_style: "solid"
+      color_key: "vermillion"
+
+datasets:
+  maximum_missing_days: 0
+  causal_fill_days: 0
+  glofas:
+    system_version: "version_4_0"
+  nasa_power:
+    parameters:
+      - "T2M"
+      - "PRECTOTCORR"
+      - "RH2M"
+
+target:
+  source: "glofas_proxy"
+  quantile: 0.95
+  glofas_proxy:
+    fixed_threshold: null
+  observed:
+    path: "data/external/observations/hardinge_observations.csv"
+    date_column: "date"
+    value_column: "observed_discharge_m3s"
+    name: "Observed Hardinge Bridge discharge"
+    unit: "m3_s-1"
+    quality_flag_column: null
+    accepted_quality_flags: []
+    fixed_threshold: null
+
+splits:
+  train_end: "2013-12-31"
+  validation_end: "2018-12-31"
+  test_end: "2023-12-31"
+
+features:
+  base_columns:
+    - "era5_temperature_c"
+    - "era5_soil_moisture_m3m3"
+    # These variables are accepted only from the verified ERA5-Land 00 UTC
+    # previous-day accumulation workflow. Experiment startup checks provenance.
+    - "era5_precipitation_mm"
+    - "era5_runoff_mm"
+    - "nasa_temperature_c"
+    - "nasa_precipitation_mm"
+    - "nasa_relative_humidity_percent"
+  include_streamflow: false
+  rolling_mean_windows: [3, 5, 7, 14]
+  rolling_sum_windows: [3, 7, 14]
+  rolling_std_windows: [7]
+  lag_days: [1, 2, 3]
+  add_interactions: true
+  add_seasonality: true
+  extreme_quantile: 0.90
+
+experiment:
+  sequence_length: 12
+  horizons: [1, 3, 5, 7]
+  seeds: [42, 123, 2024, 31415, 27182]
+  deep_models:
+    - "lstm"
+    - "gru"
+    - "cnn_lstm"
+    - "attention_lstm"
+  classical_models:
+    - "logistic_regression"
+    - "random_forest"
+    - "hist_gradient_boosting"
+  imbalance_strategy: "pos_weight"
+  batch_size: 128
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  maximum_epochs: 100
+  patience: 15
+  early_stopping_metric: "pr_auc"
+  gradient_clip: 1.0
+  hidden_size: 64
+  recurrent_layers: 2
+  dropout: 0.25
+  focal_alpha: 0.75
+  focal_gamma: 2.0
+  calibration: "sigmoid"
+  smoke_test:
+    maximum_epochs: 2
+    seeds: [42]
+    horizons: [1]
+    deep_models: ["lstm"]
+
+evaluation:
+  threshold_metric: "f1"
+  bootstrap_iterations: 1000
+  confidence_level: 0.95
+  bootstrap_block: "year"
+  event_gap_days: 1
+  reliability_bins: 10
+  cost_loss_ratios: [0.02, 0.05, 0.10, 0.20, 0.40]
+  rolling_origin:
+    initial_training_years: 24
+    validation_years: 4
+    test_years: 4
+    step_years: 4
+    minimum_test_years: 3
+    maximum_folds: 4
+
+figures:
+  style: "natural_hazards"
+  single_column_width_inches: 3.307
+  double_column_width_inches: 6.850
+  png_dpi: 600
+  tiff_dpi: 600
+  font_family: "DejaVu Sans"
+  base_font_size: 8
+  formats: ["pdf", "eps", "png", "tiff"]
+  palette:
+    blue: "#0072B2"
+    sky_blue: "#56B4E9"
+    bluish_green: "#009E73"
+    orange: "#E69F00"
+    vermillion: "#D55E00"
+    reddish_purple: "#CC79A7"
+    yellow: "#F0E442"
+    black: "#000000"
+    gray: "#6C757D"

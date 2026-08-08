@@ -1,0 +1,22 @@
+* text=auto
+.gitattributes text eol=lf
+
+*.py text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.csv text eol=lf
+
+*.nc binary
+*.grib binary
+*.grib2 binary
+*.parquet binary
+*.zip binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.tif binary
+*.tiff binary
+*.pdf binary

@@ -1,0 +1,50 @@
+# Python environments, caches, packaging, and coverage
+.venv/
+venv/
+__pypackages__/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Local credentials and secrets (never commit these)
+.cdsapirc
+cds_keys.txt
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+service-account*.json
+
+# Download fragments, logs, and operating-system/editor state
+*.part
+*.tmp
+*.temp
+*.log
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Large/local datasets; retain only documentation and the example schema
+data/raw/*
+data/external/observations/*
+data/processed/*
+!data/raw/README.md
+!data/external/observations/README.md
+!data/external/observations/example_observations.csv
+!data/processed/README.md
+
+# All generated results stay local; retain only the output description
+outputs/*
+!outputs/README.md
