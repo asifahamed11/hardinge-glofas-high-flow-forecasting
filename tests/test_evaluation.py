@@ -26,6 +26,15 @@ def test_threshold_and_metrics_are_consistent() -> None:
     assert metrics["false_positive"] == 0
 
 
+def test_single_class_metrics_mark_undefined_scores() -> None:
+    labels = np.zeros(5, dtype=int)
+    probabilities = np.linspace(0.05, 0.25, num=5)
+    metrics = binary_metrics(labels, probabilities, threshold=0.5)
+    assert np.isnan(metrics["pr_auc"])
+    assert np.isnan(metrics["roc_auc"])
+    assert np.isnan(metrics["mcc"])
+
+
 def test_sigmoid_calibration_stays_bounded() -> None:
     labels = np.array([0, 0, 0, 1, 1, 1])
     probabilities = np.array([0.2, 0.3, 0.4, 0.6, 0.7, 0.8])

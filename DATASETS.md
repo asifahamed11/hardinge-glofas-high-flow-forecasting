@@ -48,6 +48,10 @@ training-period GloFAS-modelled discharge. GloFAS historical discharge is a
 LISFLOOD simulation forced by meteorological inputs. It is neither a gauge
 observation nor an issued medium-range forecast.
 
+GloFAS marks each daily mean at the end of its 24-hour averaging period. During
+dataset building, that timestamp is mapped to the preceding UTC calendar day.
+The raw files remain unchanged and the mapping is recorded in the metadata.
+
 Create the default labels with:
 
 ```bash

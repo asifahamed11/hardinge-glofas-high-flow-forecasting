@@ -170,7 +170,11 @@ def binary_metrics(
             probabilities,
             bins=reliability_bins,
         ),
-        "mcc": float(matthews_corrcoef(labels, predictions)),
+        "mcc": (
+            float(matthews_corrcoef(labels, predictions))
+            if has_both_classes
+            else float("nan")
+        ),
         "critical_success_index": (
             float(true_positive / csi_denominator) if csi_denominator else 0.0
         ),

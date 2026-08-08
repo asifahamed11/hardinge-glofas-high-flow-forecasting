@@ -76,6 +76,26 @@ def test_nearest_station_cell_is_selected() -> None:
     np.testing.assert_allclose(series.to_numpy(), expected)
 
 
+def test_glofas_end_timestamp_maps_to_preceding_day(tmp_path: Path) -> None:
+    dataset = synthetic_dataset().drop_vars("t2m")
+    dataset = dataset.assign_coords(
+        valid_time=pd.date_range("2020-01-02", periods=3, freq="D")
+    )
+    path = tmp_path / "glofas.nc"
+    dataset.to_netcdf(path, engine="scipy")
+
+    series, coordinates = BUILD_DATASET.read_glofas_series(
+        [path],
+        latitude=24.07,
+        longitude=89.04,
+    )
+
+    assert coordinates == (24.05, 89.05)
+    assert series.index.equals(pd.date_range("2020-01-01", periods=3, freq="D"))
+    expected = dataset["dis24"].sel(latitude=24.05, longitude=89.05).values
+    np.testing.assert_allclose(series.to_numpy(), expected)
+
+
 def test_water_depth_conversion() -> None:
     series = pd.Series([0.001, 0.002])
     np.testing.assert_allclose(

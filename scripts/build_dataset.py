@@ -32,6 +32,9 @@ LOGGER = logging.getLogger("build_dataset")
 TIME_NAMES = ("valid_time", "time", "date")
 LATITUDE_NAMES = ("latitude", "lat")
 LONGITUDE_NAMES = ("longitude", "lon")
+GLOFAS_DAILY_TIME_MAPPING = (
+    "End-of-24-hour averaging timestamp shifted to the preceding UTC day"
+)
 
 
 def sha256_file(path: Path) -> str:
@@ -262,7 +265,10 @@ def read_glofas_series(
             pieces.append(series)
 
     combined = pd.concat(pieces).sort_index()
-    combined.index = combined.index.normalize()
+    # GloFAS daily discharge is a mean over the preceding 24-hour model step.
+    # Its timestamp marks the end of that averaging period, so map it to the
+    # calendar day represented by the interval before joining daily predictors.
+    combined.index = combined.index.normalize() - pd.Timedelta(days=1)
     if combined.index.has_duplicates:
         duplicate_spread = combined.groupby(level=0).agg(
             lambda values: float(np.nanmax(values) - np.nanmin(values))
@@ -503,6 +509,7 @@ def build_dataset(
                 "dataset": "CEMS GloFAS historical river discharge",
                 "doi": "10.24381/cds.a4fdd6b9",
                 "system_version": config["datasets"]["glofas"]["system_version"],
+                "daily_time_mapping": GLOFAS_DAILY_TIME_MAPPING,
             },
             "nasa_power": {
                 "dataset": "NASA POWER daily point API",
