@@ -10,4 +10,5 @@ The pipeline creates:
 - `tables/`: detailed metrics, event performance, summaries, uncertainty
   intervals, and paired comparisons.
 
-Generated outputs are excluded from version control unless a release explicitly archives them.
+Generated outputs stay local by default. A final, immutable result set can be
+archived separately and linked to the exact Git commit that produced it.

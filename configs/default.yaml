@@ -147,7 +147,7 @@ evaluation:
     maximum_folds: 4
 
 figures:
-  style: "natural_hazards"
+  style: "research"
   single_column_width_inches: 3.307
   double_column_width_inches: 6.850
   png_dpi: 600

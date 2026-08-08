@@ -1,208 +1,89 @@
-# Dataset acquisition and organization
+# Data guide
 
-The configured study period is 1 January 1981 through 31 December 2023. All paths are project-relative and can be changed in `configs/default.yaml`.
+The configured study period is 1 January 1981 through 31 December 2023. Paths,
+coordinates, variables, and date splits are defined in `configs/default.yaml`.
 
-## 1. Copernicus account and API access
+## Access
 
-ERA5-Land and GloFAS require a free Copernicus account.
+ERA5-Land and GloFAS require a free Copernicus account. Accept the terms on each
+dataset page and configure the official CDS API client using the instructions at
+[CDS API setup](https://cds.climate.copernicus.eu/how-to-api). Keep `.cdsapirc`
+and any local credential file out of version control.
 
-1. Register or sign in at the [Climate Data Store](https://cds.climate.copernicus.eu/).
-2. Open each dataset page listed below and accept its terms of use.
-3. Follow the official [CDS API setup](https://cds.climate.copernicus.eu/how-to-api).
-4. Install `cdsapi>=0.7.7`.
-5. Store the personal access token in the standard `.cdsapirc` file displayed by the portal.
-6. Never place the token in this repository, a notebook, a script, a screenshot, or a public issue.
+## Sources
 
-The download scripts use `cdsapi.Client()` without embedding a URL or token. This allows the official client configuration to work on Windows, macOS, and Linux.
-
-## 2. ERA5-Land daily inputs
-
-Official source: [ERA5-Land post-processed daily statistics](https://cds.climate.copernicus.eu/datasets/derived-era5-land-daily-statistics), DOI [10.24381/cds.e9c9c792](https://doi.org/10.24381/cds.e9c9c792).
-
-The project requests:
-
-| Statistic | Variables | Output directory |
+| Dataset | Project use | Local path |
 |---|---|---|
-| Daily mean | 2 m temperature; volumetric soil water layer 1 | `data/raw/era5_land/daily_mean/` |
-| Daily sum | Total precipitation; runoff | `data/raw/era5_land/daily_sum/` |
+| [ERA5-Land daily statistics](https://cds.climate.copernicus.eu/datasets/derived-era5-land-daily-statistics) | daily temperature and top-layer soil moisture | `data/raw/era5_land/daily_mean/` |
+| [ERA5-Land hourly data](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land) | daily precipitation and runoff accumulations | `data/raw/era5_land/daily_sum/` |
+| [GloFAS historical discharge](https://ewds.climate.copernicus.eu/datasets/cems-glofas-historical) | modelled discharge proxy | `data/raw/glofas/` |
+| [NASA POWER Daily API](https://power.larc.nasa.gov/docs/services/api/temporal/daily/) | point temperature, precipitation, and humidity | `data/raw/nasa_power/` |
 
-The configured domain is `[26.6, 88.0, 20.7, 92.6]` in
-north-west-south-east order. The processing script calculates a
-cosine-latitude-weighted grid mean, converts Kelvin to degrees Celsius, and
-converts metres of water equivalent to millimetres.
-
-Run:
+Download the three Copernicus products with:
 
 ```bash
-python scripts/download_era5_daily.py --config configs/default.yaml
-python scripts/download_era5_accumulations.py --config configs/default.yaml
+python scripts/download_era5_daily.py
+python scripts/download_era5_accumulations.py
+python scripts/download_glofas.py
 ```
 
-ERA5-Land precipitation and runoff are forecast accumulations, not independent
-hourly increments.  The downloader requests only the 00 UTC snapshots, which
-represent the complete accumulation for the preceding UTC day, shifts their
-timestamps back by one day, and verifies exact calendar coverage.  It never
-sums the cumulative hourly fields.
+NASA POWER is downloaded automatically when the merged dataset is built. Use
+`--offline` to require an existing local file.
 
-ERA5-Land is a land-only product, so ocean cells inside the configured box are
-stored as a fixed missing-value mask. The downloader records the valid-cell
-fraction, permits only a time-invariant land/sea mask, and rejects a response
-if an entire day is missing or the mask changes over time. Dataset aggregation
-uses a skip-missing, cosine-latitude-weighted mean over valid land cells.
+## ERA5-Land accumulations
 
-Before a large request, inspect the planned filenames:
+Precipitation and runoff are accumulated forecast fields, not independent
+hourly increments. The downloader requests 00 UTC values, shifts them to the
+preceding day, and requests the next-month boundary needed to retain the final
+day of each month. It never sums cumulative hourly values.
+
+ERA5-Land is land-only. A fixed ocean mask inside the configured box is allowed;
+time-varying missing cells or a completely missing day are rejected. Spatial
+aggregation uses a cosine-latitude-weighted mean over valid land cells.
+
+## Target definition
+
+The default target is `glofas_proxy`: exceedance of a threshold fitted from
+training-period GloFAS-modelled discharge. GloFAS historical discharge is a
+LISFLOOD simulation forced by meteorological inputs. It is neither a gauge
+observation nor an issued medium-range forecast.
+
+Create the default labels with:
 
 ```bash
-python scripts/download_era5_daily.py --start-year 1981 --end-year 1981 --dry-run
-python scripts/download_era5_accumulations.py --start-year 1981 --end-year 1981 --dry-run
+python scripts/create_high_flow_labels.py --target-source glofas_proxy
 ```
 
-Each completed monthly NetCDF is validated and moved atomically from a unique
-temporary file. Invalid legacy files are automatically downloaded again and
-are replaced only after the corrected response passes validation.
+The code also supports independently measured daily discharge or water level.
+This is optional and is not required for the default proxy workflow. The local
+schema is documented in `data/external/observations/README.md`; restricted data
+must not be committed.
 
-## 3. GloFAS historical discharge
+## Build the dataset
 
-Official source: [River discharge and related historical data from GloFAS](https://ewds.climate.copernicus.eu/datasets/cems-glofas-historical), DOI [10.24381/cds.a4fdd6b9](https://doi.org/10.24381/cds.a4fdd6b9).
-
-Run:
+After the required inputs are present:
 
 ```bash
-python scripts/download_glofas.py --config configs/default.yaml
+python scripts/build_dataset.py --offline
+python scripts/create_high_flow_labels.py --target-source glofas_proxy
 ```
 
-Files are stored in `data/raw/glofas/`. The request uses:
+The builder validates variables and dates, converts units, selects a consistent
+GloFAS grid cell, rejects unresolved missing values, and records SHA-256 hashes
+for the generated CSV, Parquet, and metadata files.
 
-- GloFAS version 4.0;
-- LISFLOOD;
-- consolidated historical data;
-- river discharge averaged over the previous 24 hours;
-- NetCDF output;
-- a small configured domain around Hardinge Bridge.
-
-The processing script selects the GloFAS grid cell nearest the configured Hardinge Bridge coordinates. It does not average every cell in a one-degree box.
-
-Important scientific limitation: GloFAS historical discharge is a gridded LISFLOOD simulation forced by ERA5, not a BWDB gauge observation and not a medium-range forecast. When this series supplies the label, use the terms **GloFAS modelled discharge** and **high-flow proxy**, not “observed flood.”
-
-## 4. NASA POWER daily point data
-
-Official source: [NASA POWER Daily API](https://power.larc.nasa.gov/docs/services/api/temporal/daily/).
-
-No account or API key is required. If the file is absent, `scripts/build_dataset.py` requests:
-
-- `T2M`: 2 m air temperature;
-- `PRECTOTCORR`: corrected precipitation;
-- `RH2M`: 2 m relative humidity;
-- the configured Hardinge Bridge point;
-- UTC daily values;
-- CSV output.
-
-The file is stored as:
-
-```text
-data/raw/nasa_power/nasa_power_daily.csv
-```
-
-NASA POWER daily data begin on 1 January 1981. The script explicitly requests `time-standard=UTC`; the API otherwise defaults to local solar time.
-
-Use `python scripts/build_dataset.py --offline` to prohibit this automatic download.
-
-## 5. Independent BWDB/FFWC observations
-
-For the scientifically preferred journal experiment, obtain daily observed discharge or water level from the Bangladesh Water Development Board.
-
-Official starting points:
-
-- [BWDB Hydroinformatics and Flood Forecasting Circle](https://www.hydrology.bwdb.gov.bd/)
-- [BWDB water-level data viewer](https://www.hydrology.bwdb.gov.bd/index.php?pagetitle=water_level_data_view)
-- [BWDB data availability and rates](https://www.hydrology.bwdb.gov.bd/index.php?id=225&pagetitle=rate_of_data&subid=131)
-- [Flood Forecasting and Warning Centre](https://ffwc.gov.bd/)
-
-Recommended request procedure:
-
-1. Confirm the official station identifier for Hardinge Bridge.
-2. Request the longest quality-controlled daily series available, preferably 1981–2023.
-3. Request station coordinates, measurement type, unit, datum, rating-curve history, danger level, missing-value codes, and quality flags.
-4. Confirm whether the supplied values are instantaneous, daily mean, or daily maximum.
-5. Confirm the data licence and whether redistribution is permitted.
-6. Save the licensed file locally as `data/external/observations/hardinge_observations.csv`.
-7. Do not commit restricted observations to GitHub.
-
-If the observed record covers a different continuous period, update
-`period.start`, `period.end`, and all three split end dates in
-`configs/default.yaml` before downloading and processing the public inputs.
-The label script requires exact daily target coverage for the configured
-period; it will not convert missing target dates into non-events.
-
-The default schema is:
-
-```csv
-date,observed_discharge_m3s,quality_flag
-2019-01-01,12345.6,approved
-```
-
-If BWDB supplies water level instead of discharge, change `target.observed.value_column`, `target.observed.name`, and `target.observed.unit` in the configuration. If an official danger level is available, set `target.observed.fixed_threshold`; otherwise the code fits the configured quantile on the training period only.
-
-If the licensed file contains a formal quality field, set
-`target.observed.quality_flag_column` and list the permitted values under
-`target.observed.accepted_quality_flags`. Matching is case-insensitive. The
-loader rejects duplicate dates, missing values, non-numeric values, and a
-quality filter that leaves no observations. It does not silently reinterpret
-missing observations as non-events.
-
-Create observed labels with:
-
-```bash
-python scripts/create_high_flow_labels.py \
-  --config configs/default.yaml \
-  --target-source observed
-```
-
-The code never silently falls back to GloFAS when an observed file is missing.
-
-## 6. Build the merged dataset
-
-After all required inputs are present:
-
-```bash
-python scripts/build_dataset.py --config configs/default.yaml --offline
-python scripts/create_high_flow_labels.py --config configs/default.yaml
-```
-
-The builder:
-
-- sorts input files deterministically;
-- validates variables and dates;
-- safely handles a legacy archive containing one NetCDF;
-- converts units explicitly;
-- selects one consistent GloFAS grid cell;
-- enforces unique, consecutive daily dates;
-- refuses missing values beyond the configured limit;
-- writes CSV and Parquet versions;
-- records row counts, units, extraction coordinates, software versions, and SHA-256 hashes.
-
-## Expected data tree
+## Local layout
 
 ```text
 data/
-├── external/
-│   └── observations/
-│       └── hardinge_observations.csv
-├── processed/
-│   ├── labeled_daily.csv
-│   ├── labeled_daily.parquet
-│   ├── master_daily.csv
-│   └── master_daily.parquet
+├── external/observations/     optional measured series
+├── processed/                 merged and labelled datasets
 └── raw/
-    ├── era5_land/
-    │   ├── daily_mean/
-    │   │   └── era5_land_daily_mean_YYYY_MM.nc
-    │   └── daily_sum/
-    │       └── era5_land_daily_sum_YYYY_MM.nc
+    ├── era5_land/daily_mean/
+    ├── era5_land/daily_sum/
     ├── glofas/
-    │   └── glofas_historical_YYYY_MM.nc
     └── nasa_power/
-        └── nasa_power_daily.csv
 ```
 
-Raw, processed, licensed, and generated files are excluded from Git. Only instructions and example schemas are versioned.
+Raw, processed, licensed, and generated files are excluded from Git. Only this
+guide and small example schemas are versioned.

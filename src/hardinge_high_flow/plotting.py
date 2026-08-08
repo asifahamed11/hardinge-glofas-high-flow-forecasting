@@ -1,4 +1,4 @@
-"""Publication figures for Natural Hazards submissions."""
+"""Accessible, publication-quality figures for the forecasting workflow."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ MARKERS = {
 }
 
 
-def journal_colors(config: dict[str, Any]) -> dict[str, str]:
+def figure_colors(config: dict[str, Any]) -> dict[str, str]:
     palette = config["figures"]["palette"]
     return {
         "climatology": palette["gray"],
@@ -73,7 +73,7 @@ def journal_colors(config: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def configure_journal_style(config: dict[str, Any]) -> None:
+def configure_figure_style(config: dict[str, Any]) -> None:
     figure_config = config["figures"]
     base_size = float(figure_config["base_font_size"])
     matplotlib.rcParams.update(
@@ -162,7 +162,7 @@ def plot_horizon_skill(
     output_directory: Path,
     config: dict[str, Any],
 ) -> list[Path]:
-    colors = journal_colors(config)
+    colors = figure_colors(config)
     width = float(config["figures"]["double_column_width_inches"])
     figure, axes = plt.subplots(1, 2, figsize=(width, width * 0.5))
     grouped = (
@@ -242,7 +242,7 @@ def plot_precision_recall(
     subset = ensemble[ensemble["horizon_days"] == horizon]
     width = float(config["figures"]["single_column_width_inches"])
     figure, axis = plt.subplots(figsize=(width, width * 1.0))
-    colors = journal_colors(config)
+    colors = figure_colors(config)
     for model in dict.fromkeys(subset["model"]):
         model_data = subset[subset["model"] == model]
         precision, recall, _ = precision_recall_curve(
@@ -295,7 +295,7 @@ def plot_reliability(
     subset = ensemble[ensemble["horizon_days"] == horizon]
     width = float(config["figures"]["single_column_width_inches"])
     figure, axis = plt.subplots(figsize=(width, width * 1.0))
-    colors = journal_colors(config)
+    colors = figure_colors(config)
     for model in dict.fromkeys(subset["model"]):
         model_data = subset[subset["model"] == model]
         points = reliability_points(
@@ -359,7 +359,7 @@ def plot_event_timeline(
 
     width = float(config["figures"]["double_column_width_inches"])
     figure, axis = plt.subplots(figsize=(width, width * 0.42))
-    color = journal_colors(config)[best_row]
+    color = figure_colors(config)[best_row]
     axis.plot(
         subset["target_date"],
         subset["probability"],
@@ -462,7 +462,7 @@ def generate_publication_figures(
     output_directory: Path,
     config: dict[str, Any],
 ) -> list[Path]:
-    configure_journal_style(config)
+    configure_figure_style(config)
     saved = []
     saved.extend(plot_horizon_skill(metrics, output_directory, config))
     saved.extend(plot_precision_recall(predictions, output_directory, config))

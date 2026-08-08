@@ -121,8 +121,8 @@ def _validate_config(config: dict[str, Any]) -> None:
     if not 0 < confidence < 1:
         raise ValueError("evaluation.confidence_level must be between zero and one.")
 
-    if str(config["figures"]["style"]) != "natural_hazards":
-        raise ValueError("Unsupported publication figure style.")
+    if str(config["figures"]["style"]) != "research":
+        raise ValueError("Unsupported research figure style.")
     if int(config["figures"]["png_dpi"]) < 300:
         raise ValueError("PNG resolution must be at least 300 dpi.")
     if int(config["figures"]["tiff_dpi"]) < 300:
@@ -132,7 +132,7 @@ def _validate_config(config: dict[str, Any]) -> None:
     if not formats or len(formats) != len(set(formats)):
         raise ValueError("Figure formats must be non-empty and unique.")
     if not set(formats).issubset(supported_formats):
-        raise ValueError("Unsupported publication figure format.")
+        raise ValueError("Unsupported research figure format.")
 
 
 def load_config(path: str | Path) -> dict[str, Any]:

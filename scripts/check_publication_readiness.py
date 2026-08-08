@@ -1,4 +1,4 @@
-"""Fail-fast audit for a journal-submission analysis release."""
+"""Fail-fast audit for a reproducible research release."""
 
 from __future__ import annotations
 
@@ -46,32 +46,42 @@ def _git_commit() -> str | None:
     return result.stdout.strip() or None
 
 
-def run_checks(*, allow_proxy_target: bool = False) -> list[Check]:
+def _git_tracks(path: str) -> bool:
+    try:
+        subprocess.run(
+            ["git", "ls-files", "--error-unmatch", path],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return True
+
+
+def run_checks(*, target_source: str = "glofas_proxy") -> list[Check]:
+    if target_source not in {"glofas_proxy", "observed"}:
+        raise ValueError("target_source must be glofas_proxy or observed.")
     master = _read_json(PROJECT_ROOT / "outputs/metadata/master_dataset.json")
     labels = _read_json(PROJECT_ROOT / "outputs/metadata/high_flow_labels.json")
     experiment_path = (
         PROJECT_ROOT / "outputs/metadata/experiment.json"
-        if allow_proxy_target
+        if target_source == "glofas_proxy"
         else PROJECT_ROOT / "outputs/metadata/observed_target/experiment.json"
     )
     final_experiment = _read_json(experiment_path)
-    required_target = "glofas_proxy" if allow_proxy_target else "observed"
+    required_target = target_source
     target_description = (
         "GloFAS-modelled high-flow proxy"
-        if allow_proxy_target
+        if target_source == "glofas_proxy"
         else "quality-controlled BWDB/FFWC observations"
-    )
-    credentials = PROJECT_ROOT / "cds_keys.txt"
-    credential_text = (
-        credentials.read_text(encoding="utf-8", errors="ignore")
-        if credentials.is_file()
-        else ""
     )
     checks = [
         Check(
             "Version-controlled release",
             _git_commit() is not None,
-            "A Git commit is required so manuscript results map to immutable code.",
+            "A Git commit is required so results map to immutable code.",
         ),
         Check(
             "Software licence",
@@ -80,8 +90,8 @@ def run_checks(*, allow_proxy_target: bool = False) -> list[Check]:
         ),
         Check(
             "Credential hygiene",
-            not credential_text.strip(),
-            "Remove cds_keys.txt from the release and rotate any shared keys.",
+            not any(_git_tracks(path) for path in ("cds_keys.txt", ".cdsapirc")),
+            "Local credential files may exist but must remain untracked.",
         ),
         Check(
             "Declared target labels",
@@ -139,28 +149,30 @@ def run_checks(*, allow_proxy_target: bool = False) -> list[Check]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Check whether the analysis artifacts are ready for submission."
+        description="Check whether analysis artifacts are ready for a release."
     )
     parser.add_argument(
-        "--allow-proxy-target",
+        "--require-observed-target",
         action="store_true",
         help=(
-            "Audit a GloFAS-proxy paper instead of requiring observed labels. "
-            "This does not permit claims about independently observed floods."
+            "Require independently observed labels instead of the configured "
+            "GloFAS-proxy workflow."
         ),
     )
     args = parser.parse_args()
-    checks = run_checks(allow_proxy_target=args.allow_proxy_target)
-    if args.allow_proxy_target:
-        print(
-            "TARGET MODE: GloFAS proxy only; independently observed flood claims "
-            "are out of scope.\n"
-        )
+    target_source = "observed" if args.require_observed_target else "glofas_proxy"
+    checks = run_checks(target_source=target_source)
+    target_label = (
+        "independently observed series"
+        if target_source == "observed"
+        else "GloFAS-modelled high-flow proxy"
+    )
+    print(f"TARGET MODE: {target_label}\n")
     for check in checks:
         status = "PASS" if check.passed else "FAIL"
         print(f"[{status}] {check.name}: {check.detail}")
     failures = sum(not check.passed for check in checks)
-    print(f"\nPublication-readiness result: {len(checks) - failures}/{len(checks)} passed")
+    print(f"\nRelease-readiness result: {len(checks) - failures}/{len(checks)} passed")
     raise SystemExit(1 if failures else 0)
 
 
