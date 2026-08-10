@@ -107,9 +107,9 @@ def _validate_config(config: dict[str, Any]) -> None:
     if strategy not in {"none", "pos_weight", "focal", "sampler"}:
         raise ValueError("Unsupported imbalance strategy.")
     early_stopping_metric = str(
-        config["experiment"].get("early_stopping_metric", "pr_auc")
+        config["experiment"].get("early_stopping_metric", "average_precision")
     )
-    if early_stopping_metric not in {"pr_auc", "loss"}:
+    if early_stopping_metric not in {"average_precision", "loss"}:
         raise ValueError("Unsupported early_stopping_metric.")
 
     if str(config["evaluation"]["bootstrap_block"]) != "year":

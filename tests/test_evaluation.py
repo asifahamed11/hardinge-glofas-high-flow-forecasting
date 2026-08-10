@@ -30,7 +30,7 @@ def test_single_class_metrics_mark_undefined_scores() -> None:
     labels = np.zeros(5, dtype=int)
     probabilities = np.linspace(0.05, 0.25, num=5)
     metrics = binary_metrics(labels, probabilities, threshold=0.5)
-    assert np.isnan(metrics["pr_auc"])
+    assert np.isnan(metrics["average_precision"])
     assert np.isnan(metrics["roc_auc"])
     assert np.isnan(metrics["mcc"])
 
@@ -115,7 +115,7 @@ def test_paired_bootstrap_reports_valid_event_bearing_draws() -> None:
         first_threshold=0.5,
         second_threshold=0.5,
         dates=dates,
-        metric="pr_auc",
+        metric="average_precision",
         iterations=25,
         confidence_level=0.95,
         seed=42,

@@ -142,7 +142,7 @@ def binary_metrics(
         if np.unique(labels).size == 2
         else float("nan")
     )
-    pr_auc = (
+    average_precision = (
         float(average_precision_score(labels, probabilities))
         if np.unique(labels).size == 2
         else float("nan")
@@ -162,7 +162,7 @@ def binary_metrics(
             else float("nan")
         ),
         "f1": float(f1_score(labels, predictions, zero_division=0)),
-        "pr_auc": pr_auc,
+        "average_precision": average_precision,
         "roc_auc": roc_auc,
         "brier_score": float(brier_score_loss(labels, probabilities)),
         "ece": expected_calibration_error(
@@ -429,7 +429,7 @@ def paired_block_bootstrap_difference(
             p >= threshold,
             zero_division=0,
         ),
-        "pr_auc": lambda y, p, threshold: average_precision_score(y, p),
+        "average_precision": lambda y, p, threshold: average_precision_score(y, p),
         "brier_score": lambda y, p, threshold: brier_score_loss(y, p),
     }
     if metric not in scorers:
@@ -460,7 +460,8 @@ def paired_block_bootstrap_difference(
         indices = np.concatenate(
             [np.flatnonzero(years == year) for year in sampled_years]
         )
-        # PR-AUC and rare-event F1 comparisons are undefined or uninformative
+        # Average precision and rare-event F1 comparisons are undefined or
+        # uninformative
         # when a resample contains no positive event.  Record the number of
         # attempted draws rather than silently treating such draws as zero.
         if np.unique(labels[indices]).size < 2:

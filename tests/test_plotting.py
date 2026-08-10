@@ -48,7 +48,7 @@ def test_publication_figure_export(tmp_path: Path) -> None:
                     "horizon_days": horizon,
                     "seed": 42,
                     "f1": 0.8 - 0.05 * horizon,
-                    "pr_auc": 0.85 - 0.04 * horizon,
+                    "average_precision": 0.85 - 0.04 * horizon,
                 }
             )
     saved = generate_publication_figures(

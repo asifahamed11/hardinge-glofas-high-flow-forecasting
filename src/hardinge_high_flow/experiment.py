@@ -24,8 +24,6 @@ from .config import resolve_project_path
 from .evaluation import (
     binary_metrics,
     block_bootstrap_intervals,
-    cost_loss_analysis,
-    event_catalog,
     event_metrics,
     fit_sigmoid_calibrator,
     paired_block_bootstrap_difference,
@@ -46,6 +44,7 @@ from .models import (
     train_deep_model,
 )
 from .plotting import generate_publication_figures
+from .reporting import diagnostic_tables, summarize_metrics
 
 LOGGER = logging.getLogger("experiment")
 BASELINE_MODELS = ("climatology", "persistence", "glofas_signal")
@@ -359,6 +358,21 @@ def _evaluate_run(
         .astype(str)
         .to_numpy()
     )
+    target_source = str(target_sources[0])
+    configured_threshold = config["target"][target_source].get("fixed_threshold")
+    if configured_threshold is None:
+        training_target_values = features.context.loc[
+            features.context["split"].eq("train"),
+            "target_value",
+        ]
+        target_threshold = float(
+            training_target_values.quantile(
+                float(config["target"]["quantile"]),
+                interpolation="linear",
+            )
+        )
+    else:
+        target_threshold = float(configured_threshold)
     predictions = pd.DataFrame(
         {
             "model": model_name,
@@ -369,6 +383,7 @@ def _evaluate_run(
             "target_high_flow": test_sequences.labels,
             "target_value": target_values,
             "target_source": target_sources,
+            "target_threshold": target_threshold,
             "probability": test_probabilities,
             "threshold": threshold,
             "prediction": (test_probabilities >= threshold).astype(np.int8),
@@ -461,7 +476,7 @@ def _paired_comparisons(
                         suffixes=("_model", "_reference"),
                         validate="one_to_one",
                     )
-                    for metric in ("pr_auc", "f1"):
+                    for metric in ("average_precision", "f1"):
                         result = paired_block_bootstrap_difference(
                             merged["target_high_flow"].to_numpy(),
                             merged["probability_model"].to_numpy(),
@@ -486,101 +501,6 @@ def _paired_comparisons(
                             }
                         )
     return pd.DataFrame(rows)
-
-
-def _diagnostic_tables(
-    predictions: pd.DataFrame,
-    config: dict[str, Any],
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    cost_rows = []
-    annual_rows = []
-    magnitude_rows = []
-    event_frames = []
-    grouping = ["model", "horizon_days", "seed"]
-    for keys, group in predictions.groupby(grouping, observed=True):
-        model, horizon, seed = keys
-        group = group.sort_values("target_date")
-        threshold = float(group["threshold"].mean())
-        costs = cost_loss_analysis(
-            group["target_high_flow"].to_numpy(),
-            group["probability"].to_numpy(),
-            list(map(float, config["evaluation"]["cost_loss_ratios"])),
-        )
-        costs.insert(0, "seed", int(seed))
-        costs.insert(0, "horizon_days", int(horizon))
-        costs.insert(0, "model", str(model))
-        cost_rows.extend(costs.to_dict(orient="records"))
-
-        events = event_catalog(
-            group["target_high_flow"].to_numpy(),
-            group["probability"].to_numpy(),
-            threshold,
-            pd.DatetimeIndex(group["target_date"]),
-            pd.DatetimeIndex(group["issue_date"]),
-            group["target_value"].to_numpy(),
-            int(config["evaluation"]["event_gap_days"]),
-        )
-        if not events.empty:
-            events.insert(0, "seed", int(seed))
-            events.insert(0, "horizon_days", int(horizon))
-            events.insert(0, "model", str(model))
-            event_frames.append(events)
-
-        for year, annual in group.groupby(
-            group["target_date"].dt.year,
-            observed=True,
-        ):
-            metrics = binary_metrics(
-                annual["target_high_flow"].to_numpy(),
-                annual["probability"].to_numpy(),
-                threshold,
-                int(config["evaluation"]["reliability_bins"]),
-            )
-            annual_rows.append(
-                {
-                    "model": model,
-                    "horizon_days": int(horizon),
-                    "seed": int(seed),
-                    "year": int(year),
-                    **metrics,
-                }
-            )
-
-        positives = group[group["target_high_flow"] == 1].copy()
-        if len(positives) >= 3:
-            positives["magnitude_group"] = pd.qcut(
-                positives["target_value"].rank(method="first"),
-                q=3,
-                labels=["lower", "middle", "upper"],
-            )
-            positives["detected"] = positives["probability"] >= threshold
-            for magnitude, magnitude_data in positives.groupby(
-                "magnitude_group",
-                observed=True,
-            ):
-                magnitude_rows.append(
-                    {
-                        "model": model,
-                        "horizon_days": int(horizon),
-                        "seed": int(seed),
-                        "magnitude_group": str(magnitude),
-                        "positive_days": int(len(magnitude_data)),
-                        "detection_rate": float(magnitude_data["detected"].mean()),
-                        "target_value_median": float(
-                            magnitude_data["target_value"].median()
-                        ),
-                    }
-                )
-    return (
-        pd.DataFrame(cost_rows),
-        pd.DataFrame(annual_rows),
-        pd.DataFrame(magnitude_rows),
-        (
-            pd.concat(event_frames, ignore_index=True)
-            if event_frames
-            else pd.DataFrame()
-        ),
-    )
 
 
 def _git_commit(project_root: Path) -> str | None:
@@ -843,13 +763,13 @@ def run_experiment(
                 for epoch, (
                     train_loss,
                     validation_loss,
-                    validation_pr_auc,
+                    validation_average_precision,
                     learning_rate,
                 ) in enumerate(
                     zip(
                         training.train_losses,
                         training.validation_losses,
-                        training.validation_pr_auc,
+                        training.validation_average_precision,
                         training.learning_rates,
                         strict=False,
                     ),
@@ -864,7 +784,9 @@ def run_experiment(
                             "epoch": epoch,
                             "train_loss": train_loss,
                             "validation_loss": validation_loss,
-                            "validation_pr_auc": validation_pr_auc,
+                            "validation_average_precision": (
+                                validation_average_precision
+                            ),
                             "learning_rate": learning_rate,
                         }
                     )
@@ -881,7 +803,7 @@ def run_experiment(
                             "epoch": epoch,
                             "train_loss": refit_loss,
                             "validation_loss": np.nan,
-                            "validation_pr_auc": np.nan,
+                            "validation_average_precision": np.nan,
                             "learning_rate": learning_rate,
                         }
                     )
@@ -910,27 +832,12 @@ def run_experiment(
     losses_frame = pd.DataFrame(loss_rows)
     comparisons = _paired_comparisons(predictions_frame, config)
     cost_loss, annual_metrics, magnitude_metrics, event_performance = (
-        _diagnostic_tables(
+        diagnostic_tables(
             predictions_frame,
             config,
         )
     )
-    summary = (
-        metrics_frame.groupby(["model", "horizon_days"], observed=True)
-        .agg(
-            runs=("seed", "count"),
-            pr_auc_mean=("pr_auc", "mean"),
-            pr_auc_std=("pr_auc", "std"),
-            f1_mean=("f1", "mean"),
-            f1_std=("f1", "std"),
-            recall_mean=("recall", "mean"),
-            precision_mean=("precision", "mean"),
-            brier_mean=("brier_score", "mean"),
-            event_detection_rate_mean=("event_detection_rate", "mean"),
-            false_alarm_ratio_mean=("false_alarm_ratio", "mean"),
-        )
-        .reset_index()
-    )
+    summary = summarize_metrics(metrics_frame)
 
     output_paths = {
         "metrics": table_directory / "metrics_detailed.csv",
@@ -984,10 +891,14 @@ def run_experiment(
         Path(__file__).with_name("features.py"),
         Path(__file__).with_name("models.py"),
         Path(__file__).with_name("evaluation.py"),
+        Path(__file__).with_name("interpretability.py"),
+        Path(__file__).with_name("plotting.py"),
+        Path(__file__).with_name("reporting.py"),
         Path(__file__).with_name("config.py"),
         project_root / "scripts" / "build_dataset.py",
         project_root / "scripts" / "create_high_flow_labels.py",
         project_root / "scripts" / "train_evaluate.py",
+        project_root / "scripts" / "regenerate_analysis.py",
         project_root / "scripts" / "download_era5_accumulations.py",
     ]
     input_fingerprints = [

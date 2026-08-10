@@ -27,7 +27,7 @@ def test_neural_model_is_refit_on_the_complete_training_block() -> None:
             "maximum_epochs": 2,
             "patience": 2,
             "imbalance_strategy": "none",
-            "early_stopping_metric": "pr_auc",
+            "early_stopping_metric": "average_precision",
         }
     )
     rng = np.random.default_rng(42)

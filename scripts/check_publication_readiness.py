@@ -141,7 +141,7 @@ def run_checks(*, target_source: str = "glofas_proxy") -> list[Check]:
             Check(
                 f"Required analysis: {label}",
                 (PROJECT_ROOT / relative_path).is_file(),
-                f"Missing {relative_path}.",
+                f"Expected artifact: {relative_path}.",
             )
         )
     return checks

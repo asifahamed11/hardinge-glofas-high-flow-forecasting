@@ -197,7 +197,7 @@ class TrainingResult:
     state_dict: dict[str, torch.Tensor]
     train_losses: tuple[float, ...]
     validation_losses: tuple[float, ...]
-    validation_pr_auc: tuple[float, ...]
+    validation_average_precision: tuple[float, ...]
     learning_rates: tuple[float, ...]
     best_epoch: int
     parameter_count: int
@@ -361,9 +361,11 @@ def train_deep_model(
     epochs_without_improvement = 0
     train_losses: list[float] = []
     validation_losses: list[float] = []
-    validation_pr_auc: list[float] = []
+    validation_average_precisions: list[float] = []
     learning_rates: list[float] = []
-    stopping_metric = str(experiment.get("early_stopping_metric", "pr_auc"))
+    stopping_metric = str(
+        experiment.get("early_stopping_metric", "average_precision")
+    )
     best_score = -float("inf")
 
     for epoch in range(1, int(experiment["maximum_epochs"]) + 1):
@@ -400,12 +402,12 @@ def train_deep_model(
             )
         train_losses.append(train_loss)
         validation_losses.append(validation_loss)
-        validation_pr_auc.append(validation_average_precision)
+        validation_average_precisions.append(validation_average_precision)
         scheduler.step(validation_loss)
 
         improved = (
             validation_average_precision > best_score + 1e-6
-            if stopping_metric == "pr_auc"
+            if stopping_metric == "average_precision"
             else validation_loss < best_loss - 1e-6
         )
         if improved:
@@ -427,7 +429,7 @@ def train_deep_model(
         state_dict=state_on_cpu,
         train_losses=tuple(train_losses),
         validation_losses=tuple(validation_losses),
-        validation_pr_auc=tuple(validation_pr_auc),
+        validation_average_precision=tuple(validation_average_precisions),
         learning_rates=tuple(learning_rates),
         best_epoch=best_epoch,
         parameter_count=sum(

@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from .config import resolve_project_path
+from .reporting import summarize_metrics
 
 
 @dataclass(frozen=True)
@@ -164,19 +165,17 @@ def run_rolling_origin(
     threshold_path = table_directory / "rolling_origin_thresholds.csv"
     all_metrics = pd.concat(metric_frames, ignore_index=True)
     all_metrics.to_csv(metrics_path, index=False)
-    summary = (
-        all_metrics.groupby(["model", "horizon_days"], observed=True)
-        .agg(
-            folds=("fold", "nunique"),
-            runs=("seed", "count"),
-            pr_auc_mean=("pr_auc", "mean"),
-            pr_auc_std=("pr_auc", "std"),
-            f1_mean=("f1", "mean"),
-            f1_std=("f1", "std"),
-            brier_mean=("brier_score", "mean"),
-            event_detection_rate_mean=("event_detection_rate", "mean"),
-        )
+    summary = summarize_metrics(all_metrics)
+    fold_counts = (
+        all_metrics.groupby(["model", "horizon_days"], observed=True)["fold"]
+        .nunique()
+        .rename("folds")
         .reset_index()
+    )
+    summary = fold_counts.merge(
+        summary,
+        on=["model", "horizon_days"],
+        validate="one_to_one",
     )
     summary.to_csv(summary_path, index=False)
     pd.DataFrame(threshold_rows).to_csv(threshold_path, index=False)

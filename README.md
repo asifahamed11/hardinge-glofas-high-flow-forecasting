@@ -1,8 +1,9 @@
-# Hardinge Bridge high-flow forecasting
+# GloFAS-modelled high-flow prediction at Hardinge Bridge
 
-This repository contains a reproducible workflow for predicting high-flow
-exceedance at Hardinge Bridge 1, 3, 5, and 7 days ahead. It compares statistical,
-machine-learning, and sequence models under a strictly chronological evaluation.
+This repository contains a reproducible retrospective workflow for predicting
+GloFAS-modelled high-flow exceedance at Hardinge Bridge 1, 3, 5, and 7 days
+ahead. It compares statistical, machine-learning, and sequence models under a
+strictly chronological evaluation.
 
 The default target is exceedance of a training-period threshold in
 **GloFAS-modelled discharge**. This is a retrospective proxy study: it does not
@@ -107,6 +108,14 @@ release are present:
 python scripts/check_publication_readiness.py
 ```
 
+If fitted models and test predictions already exist, corrected diagnostics,
+grouped Random Forest permutation importance, and all publication figures can
+be rebuilt without training the models again:
+
+```bash
+python scripts/regenerate_analysis.py
+```
+
 ## Evaluation design
 
 | Block | Dates | Purpose |
@@ -122,6 +131,25 @@ the same training period.
 
 The GloFAS-signal baseline uses current-day historical discharge. It is a
 retrospective reference, not an issued GloFAS forecast.
+
+Average precision (AP) is the primary ranking metric for the rare-event target.
+Threshold-sensitive results use the validation-selected threshold stored for
+each fitted run; thresholds are never averaged across prediction rows.
+
+Throughout this repository, a forecast means a retrospective multi-horizon
+prediction of the GloFAS-modelled proxy. It must not be described as a
+gauge-validated flood forecast, an observed flood prediction, or an operational
+warning-system result. The optional current-discharge experiment is a
+same-product information-availability ablation, not independent validation.
+
+## Rerun guide
+
+| Change | Required rerun |
+|---|---|
+| Documentation only | tests and publication-readiness audit |
+| Metric reporting, diagnostics, or figures | `python scripts/regenerate_analysis.py` |
+| Features, target, split dates, model architecture, or training settings | main training, all affected ablations, rolling-origin validation, then analysis regeneration |
+| Raw-data domain, variables, or temporal alignment | dataset build, labels, all experiments, then analysis regeneration |
 
 ## Outputs
 
@@ -145,7 +173,10 @@ DATASETS.md                  data acquisition and provenance notes
 
 - GloFAS-derived labels do not independently establish real flood occurrence.
 - ERA5-Land, NASA POWER, and GloFAS historical data are retrospective products.
-- The ERA5-Land box average is not a catchment-mask aggregation.
+- The configured ERA5-Land box (20.7-26.6° N, 88.0-92.6° E) represents a
+  regional lower-basin domain. It neither covers the full upstream Ganges
+  catchment nor uses catchment-area weighting. Consequently, the results cannot
+  be interpreted as a complete upstream rainfall-runoff model.
 - Operational claims require archived predictors that were available at each
   forecast issue time.
 

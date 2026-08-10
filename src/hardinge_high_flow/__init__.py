@@ -1,4 +1,4 @@
-"""Leakage-safe high-flow forecasting utilities."""
+"""Leakage-safe GloFAS-modelled high-flow prediction utilities."""
 
 __all__ = ["__version__"]
 

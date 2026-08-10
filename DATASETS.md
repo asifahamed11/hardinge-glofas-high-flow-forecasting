@@ -41,6 +41,12 @@ ERA5-Land is land-only. A fixed ocean mask inside the configured box is allowed;
 time-varying missing cells or a completely missing day are rejected. Spatial
 aggregation uses a cosine-latitude-weighted mean over valid land cells.
 
+The configured box spans 20.7-26.6° N and 88.0-92.6° E. It is a regional
+lower-basin predictor domain, not a delineated upstream Ganges catchment. It
+does not cover the full contributing basin and the grid cells are not weighted
+by catchment area. Catchment-wide hydrological interpretation would require a
+basin boundary, a new upstream data download, and a complete experiment rerun.
+
 ## Target definition
 
 The default target is `glofas_proxy`: exceedance of a threshold fitted from

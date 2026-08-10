@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hardinge-high-flow-forecasting"
 version = "1.0.0"
-description = "Leakage-safe multi-horizon high-flow forecasting at Hardinge Bridge"
+description = "Retrospective multi-horizon prediction of GloFAS-modelled high-flow at Hardinge Bridge"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
 dependencies = [

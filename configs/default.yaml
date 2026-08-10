@@ -116,7 +116,7 @@ experiment:
   weight_decay: 0.0001
   maximum_epochs: 100
   patience: 15
-  early_stopping_metric: "pr_auc"
+  early_stopping_metric: "average_precision"
   gradient_clip: 1.0
   hidden_size: 64
   recurrent_layers: 2
@@ -152,8 +152,30 @@ figures:
   double_column_width_inches: 6.850
   png_dpi: 600
   tiff_dpi: 600
-  font_family: "DejaVu Sans"
+  font_family: "Arial"
   base_font_size: 8
+  representative_seed: 42
+  main_models:
+    - "glofas_signal"
+    - "persistence"
+    - "logistic_regression"
+    - "random_forest"
+    - "lstm"
+  calibrated_models:
+    - "logistic_regression"
+    - "random_forest"
+    - "hist_gradient_boosting"
+    - "lstm"
+  event_models:
+    - "glofas_signal"
+    - "persistence"
+    - "random_forest"
+    - "lstm"
+  confusion_models:
+    - "persistence"
+    - "logistic_regression"
+    - "random_forest"
+    - "lstm"
   formats: ["pdf", "eps", "png", "tiff"]
   palette:
     blue: "#0072B2"
