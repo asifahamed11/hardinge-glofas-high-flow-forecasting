@@ -124,6 +124,8 @@ experiment:
   focal_alpha: 0.75
   focal_gamma: 2.0
   calibration: "sigmoid"
+  calibration_fraction: 0.65
+  calibration_minimum_positives: 30
   smoke_test:
     maximum_epochs: 2
     seeds: [42]
@@ -135,9 +137,22 @@ evaluation:
   bootstrap_iterations: 1000
   confidence_level: 0.95
   bootstrap_block: "year"
-  event_gap_days: 1
+  # Primary events are uninterrupted runs of threshold exceedance days.
+  event_gap_days: 0
+  event_gap_sensitivity_days: [0, 1, 2]
   reliability_bins: 10
   cost_loss_ratios: [0.02, 0.05, 0.10, 0.20, 0.40]
+  # Rank-like or deterministic baselines are not treated as calibrated
+  # probabilities in the cost-loss analysis.
+  cost_loss_models:
+    - "climatology"
+    - "logistic_regression"
+    - "random_forest"
+    - "hist_gradient_boosting"
+    - "lstm"
+    - "gru"
+    - "cnn_lstm"
+    - "attention_lstm"
   rolling_origin:
     initial_training_years: 24
     validation_years: 4
@@ -154,7 +169,7 @@ figures:
   tiff_dpi: 600
   font_family: "Arial"
   base_font_size: 8
-  representative_seed: 42
+  illustrative_seed: 42
   main_models:
     - "glofas_signal"
     - "persistence"

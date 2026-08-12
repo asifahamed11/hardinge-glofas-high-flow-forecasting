@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from statistics import NormalDist
 
 import numpy as np
 import pandas as pd
@@ -83,15 +84,108 @@ def reliability_points(
         mask = assignments == bin_index
         if not mask.any():
             continue
+        count = int(mask.sum())
+        observed = float(labels[mask].mean())
+        z_value = 1.959963984540054
+        denominator = 1 + z_value**2 / count
+        centre = (observed + z_value**2 / (2 * count)) / denominator
+        margin = (
+            z_value
+            * np.sqrt(
+                observed * (1 - observed) / count
+                + z_value**2 / (4 * count**2)
+            )
+            / denominator
+        )
         rows.append(
             {
                 "bin": bin_index,
                 "mean_probability": float(probabilities[mask].mean()),
-                "observed_fraction": float(labels[mask].mean()),
-                "count": int(mask.sum()),
+                "observed_fraction": observed,
+                "count": count,
+                "observed_ci_low": float(max(0.0, centre - margin)),
+                "observed_ci_high": float(min(1.0, centre + margin)),
             }
         )
     return pd.DataFrame(rows)
+
+
+def calibration_slope_intercept(
+    labels: np.ndarray,
+    probabilities: np.ndarray,
+    dates: pd.DatetimeIndex | None = None,
+    confidence_level: float = 0.95,
+) -> dict[str, float]:
+    """Estimate calibration intercept and slope with year-clustered intervals.
+
+    The calibration model regresses the binary outcome on the logit of the
+    forecast probability.  When dates are supplied, the sandwich covariance
+    treats calendar years as clusters; this avoids presenting daily samples as
+    independent observations.
+    """
+
+    labels = np.asarray(labels, dtype=int)
+    probabilities = np.asarray(probabilities, dtype=float)
+    if len(labels) != len(probabilities):
+        raise ValueError("Calibration inputs must have equal lengths.")
+    if np.unique(labels).size != 2:
+        raise ValueError("Calibration diagnostics require both target classes.")
+    if not 0 < confidence_level < 1:
+        raise ValueError("Confidence level must be between zero and one.")
+    clipped = np.clip(probabilities, 1e-6, 1 - 1e-6)
+    logits = np.log(clipped / (1 - clipped))
+    model = LogisticRegression(
+        penalty=None,
+        solver="lbfgs",
+        max_iter=2_000,
+    )
+    model.fit(logits.reshape(-1, 1), labels)
+    intercept = float(model.intercept_[0])
+    slope = float(model.coef_[0, 0])
+
+    design = np.column_stack([np.ones(len(logits)), logits])
+    fitted = model.predict_proba(logits.reshape(-1, 1))[:, 1]
+    weights = np.clip(fitted * (1 - fitted), 1e-12, None)
+    bread = np.linalg.pinv(design.T @ (weights[:, None] * design))
+    if dates is None:
+        score = design * (labels - fitted)[:, None]
+        meat = score.T @ score
+        cluster_count = len(labels)
+        covariance_type = "heteroskedasticity_robust"
+    else:
+        dates = pd.DatetimeIndex(dates)
+        if len(dates) != len(labels):
+            raise ValueError("Calibration dates must match the target length.")
+        years = np.asarray(dates.year)
+        unique_years = np.unique(years)
+        if len(unique_years) < 2:
+            raise ValueError("At least two years are required for clustered intervals.")
+        cluster_scores = np.asarray(
+            [
+                (
+                    design[years == year]
+                    * (labels[years == year] - fitted[years == year])[:, None]
+                ).sum(axis=0)
+                for year in unique_years
+            ]
+        )
+        meat = cluster_scores.T @ cluster_scores
+        cluster_count = len(unique_years)
+        meat *= cluster_count / (cluster_count - 1)
+        covariance_type = "calendar_year_clustered"
+    covariance = bread @ meat @ bread
+    standard_errors = np.sqrt(np.clip(np.diag(covariance), 0, None))
+    z_value = NormalDist().inv_cdf(0.5 + confidence_level / 2)
+    return {
+        "calibration_intercept_test": intercept,
+        "calibration_intercept_test_ci_low": float(intercept - z_value * standard_errors[0]),
+        "calibration_intercept_test_ci_high": float(intercept + z_value * standard_errors[0]),
+        "calibration_slope_test": slope,
+        "calibration_slope_test_ci_low": float(slope - z_value * standard_errors[1]),
+        "calibration_slope_test_ci_high": float(slope + z_value * standard_errors[1]),
+        "calibration_interval_clusters": float(cluster_count),
+        "calibration_interval_covariance": covariance_type,
+    }
 
 
 def select_threshold(
@@ -102,21 +196,34 @@ def select_threshold(
     labels = np.asarray(labels, dtype=int)
     probabilities = np.asarray(probabilities, dtype=float)
     candidates = np.unique(np.concatenate(([0.0], probabilities, [1.0])))
-    scores = []
-    for threshold in candidates:
-        predictions = (probabilities >= threshold).astype(int)
-        if metric == "f1":
-            score = f1_score(labels, predictions, zero_division=0)
-        elif metric == "csi":
-            true_negative, false_positive, false_negative, true_positive = (
-                confusion_matrix(labels, predictions, labels=[0, 1]).ravel()
-            )
-            denominator = true_positive + false_positive + false_negative
-            score = true_positive / denominator if denominator else 0.0
-        else:
-            raise ValueError(f"Unsupported threshold metric: {metric}")
-        scores.append(float(score))
-    best_score = max(scores)
+    order = np.argsort(probabilities, kind="stable")
+    sorted_probabilities = probabilities[order]
+    sorted_labels = labels[order]
+    positions = np.searchsorted(sorted_probabilities, candidates, side="left")
+    positive_prefix = np.concatenate(([0], np.cumsum(sorted_labels)))
+    true_positive = labels.sum() - positive_prefix[positions]
+    predicted_positive = len(labels) - positions
+    false_positive = predicted_positive - true_positive
+    false_negative = labels.sum() - true_positive
+    if metric == "f1":
+        denominators = 2 * true_positive + false_positive + false_negative
+        scores = np.divide(
+            2 * true_positive,
+            denominators,
+            out=np.zeros_like(denominators, dtype=float),
+            where=denominators > 0,
+        )
+    elif metric == "csi":
+        denominators = true_positive + false_positive + false_negative
+        scores = np.divide(
+            true_positive,
+            denominators,
+            out=np.zeros_like(denominators, dtype=float),
+            where=denominators > 0,
+        )
+    else:
+        raise ValueError(f"Unsupported threshold metric: {metric}")
+    best_score = float(scores.max())
     best_thresholds = candidates[np.isclose(scores, best_score)]
     return float(best_thresholds.max()), float(best_score)
 
@@ -374,21 +481,25 @@ def block_bootstrap_intervals(
         raise ValueError("At least two years are required for block bootstrap.")
     rng = np.random.default_rng(seed)
     collected: dict[str, list[float]] = {}
+    metric_cache: dict[tuple[int, ...], dict[str, float]] = {}
     for _ in range(iterations):
         sampled_years = rng.choice(
             unique_years,
             size=len(unique_years),
             replace=True,
         )
-        sample_indices = np.concatenate(
-            [np.flatnonzero(years == year) for year in sampled_years]
-        )
-        sample_metrics = binary_metrics(
-            labels[sample_indices],
-            probabilities[sample_indices],
-            threshold,
-            reliability_bins,
-        )
+        cache_key = tuple(sorted(map(int, sampled_years)))
+        if cache_key not in metric_cache:
+            sample_indices = np.concatenate(
+                [np.flatnonzero(years == year) for year in sampled_years]
+            )
+            metric_cache[cache_key] = binary_metrics(
+                labels[sample_indices],
+                probabilities[sample_indices],
+                threshold,
+                reliability_bins,
+            )
+        sample_metrics = metric_cache[cache_key]
         for name, value in sample_metrics.items():
             if name in {
                 "true_negative",
@@ -448,6 +559,7 @@ def paired_block_bootstrap_difference(
         raise ValueError("At least two years are required for paired bootstrap.")
     rng = np.random.default_rng(seed)
     differences = []
+    difference_cache: dict[tuple[int, ...], float | None] = {}
     attempts = 0
     maximum_attempts = iterations * 50
     while len(differences) < iterations and attempts < maximum_attempts:
@@ -457,6 +569,12 @@ def paired_block_bootstrap_difference(
             size=len(unique_years),
             replace=True,
         )
+        cache_key = tuple(sorted(map(int, sampled_years)))
+        if cache_key in difference_cache:
+            cached = difference_cache[cache_key]
+            if cached is not None:
+                differences.append(cached)
+            continue
         indices = np.concatenate(
             [np.flatnonzero(years == year) for year in sampled_years]
         )
@@ -465,6 +583,7 @@ def paired_block_bootstrap_difference(
         # when a resample contains no positive event.  Record the number of
         # attempted draws rather than silently treating such draws as zero.
         if np.unique(labels[indices]).size < 2:
+            difference_cache[cache_key] = None
             continue
         first = scorer(
             labels[indices],
@@ -476,7 +595,9 @@ def paired_block_bootstrap_difference(
             second_probabilities[indices],
             second_threshold,
         )
-        differences.append(float(first - second))
+        difference = float(first - second)
+        difference_cache[cache_key] = difference
+        differences.append(difference)
 
     if len(differences) < iterations:
         raise ValueError(

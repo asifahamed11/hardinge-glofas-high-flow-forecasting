@@ -111,6 +111,16 @@ def _validate_config(config: dict[str, Any]) -> None:
     )
     if early_stopping_metric not in {"average_precision", "loss"}:
         raise ValueError("Unsupported early_stopping_metric.")
+    calibration_fraction = float(
+        config["experiment"].get("calibration_fraction", 0.65)
+    )
+    calibration_minimum_positives = int(
+        config["experiment"].get("calibration_minimum_positives", 30)
+    )
+    if not 0.2 <= calibration_fraction <= 0.8:
+        raise ValueError("experiment.calibration_fraction must be within [0.2, 0.8].")
+    if calibration_minimum_positives < 1:
+        raise ValueError("experiment.calibration_minimum_positives must be positive.")
 
     if str(config["evaluation"]["bootstrap_block"]) != "year":
         raise ValueError("Only year-block bootstrap is supported.")
@@ -120,6 +130,20 @@ def _validate_config(config: dict[str, Any]) -> None:
         raise ValueError("Use at least 20 bootstrap iterations.")
     if not 0 < confidence < 1:
         raise ValueError("evaluation.confidence_level must be between zero and one.")
+    event_gap_days = int(config["evaluation"]["event_gap_days"])
+    sensitivity_gaps = list(
+        map(
+            int,
+            config["evaluation"].get(
+                "event_gap_sensitivity_days",
+                [event_gap_days],
+            ),
+        )
+    )
+    if event_gap_days < 0 or not sensitivity_gaps or min(sensitivity_gaps) < 0:
+        raise ValueError("Event gap settings must be non-negative.")
+    if event_gap_days not in sensitivity_gaps:
+        raise ValueError("Primary event gap must be included in sensitivity gaps.")
 
     if str(config["figures"]["style"]) != "research":
         raise ValueError("Unsupported research figure style.")

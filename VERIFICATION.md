@@ -1,11 +1,11 @@
 # Verification record
 
-Last updated: 10 August 2026.
+Last updated: 12 August 2026.
 
 ## Completed
 
 - Python compilation and Ruff checks passed.
-- 36 automated tests passed.
+- 40 automated tests passed.
 - Tests cover configuration, unit conversion, spatial extraction, ERA5-Land
   accumulation decoding, stable ocean masks, download retries, missing-data
   safeguards, target construction, sequence isolation, model refitting,
@@ -21,7 +21,12 @@ Last updated: 10 August 2026.
 - Tables consistently report Average Precision (AP), matching the implemented
   `average_precision_score` calculation.
 - Random Forest grouped permutation importance was generated with and without
-  current GloFAS discharge.
+  current GloFAS discharge on the late validation block using physical predictor
+  families, five fitted seeds, and ten permutation repeats.
+- Primary, ablation, and rolling-origin saved runs were recalibrated with the
+  65%/35% chronological validation policy and 1,000 year-block replicates.
+- Event-gap, calibration-boundary, calibration slope/intercept, and
+  leave-one-test-year-out sensitivity outputs were generated.
 - The tracked release contains no CDS credentials, raw data, local environment,
   generated models, or machine-specific paths.
 - The `main` branch is linked to the public GitHub repository.

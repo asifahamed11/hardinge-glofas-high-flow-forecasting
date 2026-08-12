@@ -44,7 +44,14 @@ from .models import (
     train_deep_model,
 )
 from .plotting import generate_publication_figures
-from .reporting import diagnostic_tables, summarize_metrics
+from .reporting import (
+    add_multiple_comparison_control,
+    calibration_diagnostic_table,
+    diagnostic_tables,
+    event_definition_sensitivity,
+    leave_one_year_out_sensitivity,
+    summarize_metrics,
+)
 
 LOGGER = logging.getLogger("experiment")
 BASELINE_MODELS = ("climatology", "persistence", "glofas_signal")
@@ -168,20 +175,64 @@ def smoke_test_config(config: dict[str, Any]) -> dict[str, Any]:
     return smoke
 
 
-def _validation_partitions(labels: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _validation_partitions(
+    labels: np.ndarray,
+    calibration_fraction: float = 0.65,
+    minimum_positives: int = 30,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Create temporally ordered calibration and threshold-selection blocks.
+
+    The default boundary gives both blocks materially more rare-event examples
+    than the historical first-valid 35% split.  Nearby boundaries are searched
+    only when the requested boundary cannot meet the minimum-positive rule.
+    """
+
     count = len(labels)
-    for fraction in np.linspace(0.35, 0.65, 13):
+    if not 0.2 <= calibration_fraction <= 0.8:
+        raise ValueError("Calibration fraction must be between 0.2 and 0.8.")
+    if minimum_positives < 1:
+        raise ValueError("Calibration minimum positives must be positive.")
+    candidates = sorted(
+        np.linspace(0.35, 0.75, 17),
+        key=lambda fraction: abs(float(fraction) - calibration_fraction),
+    )
+    valid_fallback: tuple[np.ndarray, np.ndarray] | None = None
+    best_fallback_score = -1
+    for fraction in candidates:
         boundary = int(count * fraction)
         calibration = np.arange(0, boundary)
         threshold = np.arange(boundary, count)
-        if (
+        calibration_positives = int(np.asarray(labels)[calibration].sum())
+        threshold_positives = int(np.asarray(labels)[threshold].sum())
+        both_classes = (
             np.unique(labels[calibration]).size == 2
             and np.unique(labels[threshold]).size == 2
-        ):
+        )
+        if not both_classes:
+            continue
+        fallback_score = min(calibration_positives, threshold_positives)
+        if fallback_score > best_fallback_score:
+            valid_fallback = (calibration, threshold)
+            best_fallback_score = fallback_score
+        if min(calibration_positives, threshold_positives) >= minimum_positives:
             return calibration, threshold
+    if valid_fallback is not None:
+        return valid_fallback
     raise ValueError(
         "Validation period cannot support separate calibration "
         "and threshold-selection subsets."
+    )
+
+
+def _configured_validation_partitions(
+    labels: np.ndarray,
+    config: dict[str, Any],
+) -> tuple[np.ndarray, np.ndarray]:
+    experiment = config["experiment"]
+    return _validation_partitions(
+        labels,
+        float(experiment.get("calibration_fraction", 0.65)),
+        int(experiment.get("calibration_minimum_positives", 30)),
     )
 
 
@@ -294,7 +345,10 @@ def _evaluate_run(
     calibration_metadata: dict[str, float],
     extra_metadata: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], pd.DataFrame]:
-    _, threshold_indices = _validation_partitions(validation_sequences.labels)
+    _, threshold_indices = _configured_validation_partitions(
+        validation_sequences.labels,
+        config,
+    )
     threshold, validation_score = select_threshold(
         validation_sequences.labels[threshold_indices],
         validation_probabilities[threshold_indices],
@@ -500,7 +554,7 @@ def _paired_comparisons(
                                 **result,
                             }
                         )
-    return pd.DataFrame(rows)
+    return add_multiple_comparison_control(pd.DataFrame(rows))
 
 
 def _git_commit(project_root: Path) -> str | None:
@@ -582,7 +636,10 @@ def run_experiment(
             int(experiment["sequence_length"]),
             horizon,
         )
-        calibration_indices, _ = _validation_partitions(validation.labels)
+        calibration_indices, _ = _configured_validation_partitions(
+            validation.labels,
+            config,
+        )
 
         for baseline in BASELINE_MODELS:
             validation_probabilities = _baseline_probabilities(
@@ -837,6 +894,15 @@ def run_experiment(
             config,
         )
     )
+    event_sensitivity = event_definition_sensitivity(predictions_frame, config)
+    omitted_year_sensitivity = leave_one_year_out_sensitivity(
+        predictions_frame,
+        config,
+    )
+    calibration_diagnostics = calibration_diagnostic_table(
+        predictions_frame,
+        config,
+    )
     summary = summarize_metrics(metrics_frame)
 
     output_paths = {
@@ -848,6 +914,11 @@ def run_experiment(
         "annual_metrics": table_directory / "metrics_by_year.csv",
         "magnitude_metrics": table_directory / "metrics_by_magnitude.csv",
         "event_performance": table_directory / "event_performance.csv",
+        "event_sensitivity": table_directory / "event_definition_sensitivity.csv",
+        "omitted_year_sensitivity": (
+            table_directory / "leave_one_year_out_sensitivity.csv"
+        ),
+        "calibration_diagnostics": table_directory / "calibration_diagnostics.csv",
         "predictions": prediction_directory / "test_predictions.parquet",
         "metadata": metadata_path,
     }
@@ -859,6 +930,15 @@ def run_experiment(
     annual_metrics.to_csv(output_paths["annual_metrics"], index=False)
     magnitude_metrics.to_csv(output_paths["magnitude_metrics"], index=False)
     event_performance.to_csv(output_paths["event_performance"], index=False)
+    event_sensitivity.to_csv(output_paths["event_sensitivity"], index=False)
+    omitted_year_sensitivity.to_csv(
+        output_paths["omitted_year_sensitivity"],
+        index=False,
+    )
+    calibration_diagnostics.to_csv(
+        output_paths["calibration_diagnostics"],
+        index=False,
+    )
     predictions_frame.to_parquet(output_paths["predictions"], index=False)
     predictions_frame.to_csv(
         prediction_directory / "test_predictions.csv",

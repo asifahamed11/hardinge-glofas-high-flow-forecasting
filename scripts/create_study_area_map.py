@@ -589,7 +589,7 @@ def add_map_grid(
     grid.setAnnotationEnabled(True)
     grid.setAnnotationFormat(QgsLayoutItemMapGrid.DecimalWithSuffix)
     grid.setAnnotationPrecision(0)
-    grid.setAnnotationTextFormat(text_format(6.7, color="#374151"))
+    grid.setAnnotationTextFormat(text_format(9.0, color="#374151"))
     grid.setAnnotationPosition(
         QgsLayoutItemMapGrid.OutsideMapFrame,
         QgsLayoutItemMapGrid.Left,
@@ -649,24 +649,27 @@ def map_coordinate_to_layout(
 
 
 def add_manual_legend(layout: QgsPrintLayout) -> None:
-    y1, y2 = 172.0, 187.0
-    add_rectangle(layout, 15, y1 + 2, 10, 5, fill=COLORS["country"], outline=COLORS["boundary"])
-    add_label(layout, "Country boundary", 28, y1, 34, 9, size=7.2)
-    add_line(layout, [(67, y1 + 4.5), (78, y1 + 4.5)], color=COLORS["river"], width=0.45)
-    add_label(layout, "Ganges network and major tributaries", 81, y1, 55, 9, size=7.2)
-    add_rectangle(layout, 143, y1 + 2, 10, 5, fill=COLORS["basin_fill"], outline=COLORS["basin_line"])
-    add_label(layout, "Upstream Ganges catchment at Hardinge", 156, y1, 57, 9, size=7.2)
-    add_rectangle(layout, 220, y1 + 2, 10, 5, fill=COLORS["bangladesh"], outline="#9A8A55")
-    add_label(layout, "Bangladesh", 233, y1, 30, 9, size=7.2)
+    y1, y2, y3 = 153.0, 170.0, 187.0
+    legend_size = 11.5
 
-    add_label(layout, "★", 14, y2, 10, 9, size=13, bold=True, color=COLORS["hardinge"], align=Qt.AlignCenter)
-    add_label(layout, "Hardinge Bridge / NASA POWER point", 28, y2, 51, 9, size=7.2)
-    add_ellipse(layout, 86, y2 + 2.5, 4, fill="#FFFFFF", outline="#111111")
-    add_label(layout, "Selected GloFAS grid point", 93, y2, 44, 9, size=7.2)
-    add_rectangle(layout, 143, y2 + 2, 10, 6, fill=None, outline=COLORS["era5"], line_width=0.55, line_style="dash")
-    add_label(layout, "ERA5-Land averaging domain", 156, y2, 49, 9, size=7.2)
-    add_rectangle(layout, 212, y2 + 2, 10, 6, fill=None, outline=COLORS["glofas"], line_width=0.60)
-    add_label(layout, "GloFAS download domain", 225, y2, 42, 9, size=7.2)
+    add_rectangle(layout, 15, y1 + 3, 10, 5, fill=COLORS["country"], outline=COLORS["boundary"])
+    add_label(layout, "Country boundary", 28, y1, 65, 12, size=legend_size)
+    add_line(layout, [(110, y1 + 5.5), (122, y1 + 5.5)], color=COLORS["river"], width=0.45)
+    add_label(layout, "Ganges + major tributaries", 125, y1, 75, 12, size=legend_size)
+    add_rectangle(layout, 220, y1 + 3, 10, 5, fill=COLORS["basin_fill"], outline=COLORS["basin_line"])
+    add_label(layout, "Upstream Ganges catchment", 233, y1, 82, 12, size=legend_size)
+
+    add_rectangle(layout, 15, y2 + 3, 10, 5, fill=COLORS["bangladesh"], outline="#9A8A55")
+    add_label(layout, "Bangladesh", 28, y2, 65, 12, size=legend_size)
+    add_label(layout, "★", 109, y2, 11, 12, size=15, bold=True, color=COLORS["hardinge"], align=Qt.AlignCenter)
+    add_label(layout, "Hardinge / NASA POWER", 123, y2, 77, 12, size=legend_size)
+    add_ellipse(layout, 220, y2 + 3.5, 4, fill="#FFFFFF", outline="#111111")
+    add_label(layout, "Selected GloFAS cell", 233, y2, 82, 12, size=legend_size)
+
+    add_rectangle(layout, 15, y3 + 3, 10, 6, fill=None, outline=COLORS["era5"], line_width=0.55, line_style="dash")
+    add_label(layout, "ERA5-Land averaging box", 28, y3, 65, 12, size=legend_size)
+    add_rectangle(layout, 110, y3 + 3, 10, 6, fill=None, outline=COLORS["glofas"], line_width=0.60)
+    add_label(layout, "GloFAS download box", 123, y3, 77, 12, size=legend_size)
 
 
 def build_layout(
@@ -722,10 +725,10 @@ def build_layout(
         grid_y=1,
     )
 
-    add_label(layout, "a", 4, 4, 10, 10, size=13, bold=True)
-    add_label(layout, "Regional context", left_x, 5, map_width, 10, size=11, align=Qt.AlignCenter)
-    add_label(layout, "b", 162, 4, 10, 10, size=13, bold=True)
-    add_label(layout, "Detailed study area", right_x, 5, map_width, 10, size=11, align=Qt.AlignCenter)
+    add_label(layout, "a", 4, 4, 10, 10, size=14, bold=True)
+    add_label(layout, "Regional context", left_x, 5, map_width, 10, size=14, align=Qt.AlignCenter)
+    add_label(layout, "b", 162, 4, 10, 10, size=14, bold=True)
+    add_label(layout, "Detailed study area", right_x, 5, map_width, 10, size=14, align=Qt.AlignCenter)
 
     country_labels = {
         "PAKISTAN": (71.7, 29.0),
@@ -752,7 +755,7 @@ def build_layout(
             y - 3,
             22,
             6,
-            size=7.2,
+            size=10.5,
             bold=True,
             align=Qt.AlignCenter,
             halo_size=0.75,
@@ -767,7 +770,7 @@ def build_layout(
         bay_y - 3,
         34,
         6,
-        size=7.4,
+        size=10.5,
         color="#2563A8",
         align=Qt.AlignCenter,
         halo_size=0.7,
@@ -783,7 +786,7 @@ def build_layout(
         bd_y - 3,
         36,
         7,
-        size=9,
+        size=13,
         bold=True,
         align=Qt.AlignCenter,
         halo_size=0.9,
@@ -813,13 +816,13 @@ def build_layout(
     )
     add_label(
         layout,
-        "Hardinge Bridge analysis point\nand NASA POWER point\n(24.07° N, 89.03° E)",
+        "Hardinge Bridge\nanalysis point and\nNASA POWER point\n(24.07° N, 89.03° E)",
         hardinge_label_x,
-        69,
-        43,
-        24,
-        size=7.0,
-        halo_size=0.8,
+        66,
+        45,
+        34,
+        size=10.5,
+        halo_size=1.0,
     )
     add_line(
         layout,
@@ -833,30 +836,30 @@ def build_layout(
     )
     add_label(
         layout,
-        "Selected GloFAS grid point\n(cell centre: 24.075° N,\n89.025° E)",
+        "Selected GloFAS\ncell centre\n(24.075° N,\n89.025° E)",
         hardinge_label_x,
-        99,
-        43,
-        22,
-        size=7.0,
-        halo_size=0.8,
+        100,
+        45,
+        34,
+        size=10.5,
+        halo_size=1.0,
     )
     add_line(
         layout,
-        [(era5_x, era5_y), (276, 39)],
+        [(era5_x, era5_y), (270, 39)],
         color=COLORS["era5"],
         width=0.35,
     )
     add_label(
         layout,
-        "ERA5-Land averaging domain\n(regional box, not the full\nupstream catchment)",
-        280,
-        28,
-        34,
+        "ERA5-Land averaging\nbox (regional, not the\nfull upstream\ncatchment)",
+        271,
         24,
-        size=7.0,
+        43,
+        34,
+        size=10.5,
         color=COLORS["era5"],
-        halo_size=0.75,
+        halo_size=1.0,
     )
 
     add_manual_legend(layout)
@@ -872,9 +875,9 @@ def build_layout(
     )
     north_arrow.setLinkedMap(detail)
     layout.addLayoutItem(north_arrow)
-    north_arrow.attemptMove(QgsLayoutPoint(274, 171, QgsUnitTypes.LayoutMillimeters))
+    north_arrow.attemptMove(QgsLayoutPoint(222, 184, QgsUnitTypes.LayoutMillimeters))
     north_arrow.attemptResize(QgsLayoutSize(11, 17, QgsUnitTypes.LayoutMillimeters))
-    add_label(layout, "N", 274, 167, 11, 6, size=7.5, bold=True, align=Qt.AlignCenter)
+    add_label(layout, "N", 222, 180, 11, 6, size=11, bold=True, align=Qt.AlignCenter)
 
     scale_bar = QgsLayoutItemScaleBar(layout)
     scale_bar.setStyle("Single Box")
@@ -885,7 +888,7 @@ def build_layout(
     scale_bar.setUnitsPerSegment(50)
     scale_bar.setUnitLabel("km")
     scale_bar.setHeight(3.5)
-    scale_bar.setTextFormat(text_format(6.5))
+    scale_bar.setTextFormat(text_format(10.0))
     scale_bar.setFillSymbol(
         QgsFillSymbol.createSimple({"color": "#111111", "outline_style": "no"})
     )
@@ -896,7 +899,7 @@ def build_layout(
         QgsLineSymbol.createSimple({"color": "#111111", "width": "0.25"})
     )
     layout.addLayoutItem(scale_bar)
-    scale_bar.attemptMove(QgsLayoutPoint(285, 177, QgsUnitTypes.LayoutMillimeters))
+    scale_bar.attemptMove(QgsLayoutPoint(238, 191, QgsUnitTypes.LayoutMillimeters))
     scale_bar.update()
 
     add_label(
@@ -906,7 +909,7 @@ def build_layout(
         207,
         304,
         7,
-        size=6.4,
+        size=8.0,
         color="#4B5563",
         align=Qt.AlignCenter,
     )

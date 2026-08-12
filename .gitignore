@@ -57,6 +57,7 @@ outputs/*
 # Submission drafts and generated publication artwork stay local
 manuscript/
 Diagram/
+/review.docx
 
 # Local manuscript-authoring helpers embed draft article text
 scripts/create_*_docx.py

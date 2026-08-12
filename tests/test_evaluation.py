@@ -6,6 +6,7 @@ import pandas as pd
 from hardinge_high_flow.evaluation import (
     binary_metrics,
     block_bootstrap_intervals,
+    calibration_slope_intercept,
     cost_loss_analysis,
     event_catalog,
     event_metrics,
@@ -42,6 +43,21 @@ def test_sigmoid_calibration_stays_bounded() -> None:
     calibrated = calibrator.transform(probabilities)
     assert np.all((calibrated > 0) & (calibrated < 1))
     assert np.all(np.diff(calibrated) > 0)
+
+
+def test_calibration_diagnostics_report_year_clustered_intervals() -> None:
+    dates = pd.date_range("2019-01-01", "2023-12-31", freq="D")
+    labels = (dates.month == 8).astype(int)
+    probabilities = np.where(labels == 1, 0.75, 0.08)
+    diagnostics = calibration_slope_intercept(
+        labels,
+        probabilities,
+        dates,
+        confidence_level=0.95,
+    )
+    assert diagnostics["calibration_slope_test"] > 0
+    assert diagnostics["calibration_interval_clusters"] == 5
+    assert diagnostics["calibration_interval_covariance"] == "calendar_year_clustered"
 
 
 def test_event_metrics_count_contiguous_events() -> None:

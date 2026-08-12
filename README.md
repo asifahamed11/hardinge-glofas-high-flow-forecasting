@@ -116,6 +116,13 @@ be rebuilt without training the models again:
 python scripts/regenerate_analysis.py
 ```
 
+For a saved run created with the earlier calibration policy, recalibrate its
+stored probabilities and thresholds before regeneration:
+
+```bash
+python scripts/recalibrate_saved_main.py --bootstrap-iterations 1000
+```
+
 ## Evaluation design
 
 | Block | Dates | Purpose |
@@ -123,6 +130,15 @@ python scripts/regenerate_analysis.py
 | Training | 1981-01-01 to 2013-12-31 | feature fitting and model estimation |
 | Validation | 2014-01-01 to 2018-12-31 | calibration and threshold selection |
 | Test | 2019-01-01 to 2023-12-31 | final untouched evaluation |
+
+The validation sequences are divided chronologically: the first 65% fits the
+sigmoid calibrator and the final 35% selects the F1 operating threshold, with a
+minimum of 30 positives in each block when feasible. Primary events are
+uninterrupted exceedance runs; bridging one or two negative days is reported as
+a sensitivity analysis. Uncertainty uses calendar-year blocks, paired
+comparisons include Holm adjustment, and leave-one-test-year-out ranges are
+reported. Predictor-family permutation importance is evaluated on the late
+validation block, never on the test set.
 
 Neural models use an inner temporal holdout to select the stopping epoch and
 learning-rate schedule. A fresh model is then fitted on the complete training

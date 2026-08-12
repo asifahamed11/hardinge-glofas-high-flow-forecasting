@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 
 from .config import resolve_project_path
+from .evaluation import event_metrics
+from .features import create_sequences, prepare_features
 from .reporting import summarize_metrics
 
 
@@ -112,6 +114,67 @@ def relabel_for_fold(
     return subset, threshold
 
 
+def fold_sequence_counts(
+    frame: pd.DataFrame,
+    config: dict[str, Any],
+) -> pd.DataFrame:
+    """Count usable sequences, positive days, and events in every split."""
+
+    features = prepare_features(frame, config)
+    rows = []
+    for split in ("train", "validation", "test"):
+        for horizon in map(int, config["experiment"]["horizons"]):
+            sequences = create_sequences(
+                features,
+                split,
+                int(config["experiment"]["sequence_length"]),
+                horizon,
+            )
+            events = event_metrics(
+                sequences.labels,
+                sequences.labels.astype(float),
+                0.5,
+                sequences.target_dates,
+                int(config["evaluation"]["event_gap_days"]),
+            )
+            rows.append(
+                {
+                    "split": split,
+                    "horizon_days": horizon,
+                    "usable_sequences": int(len(sequences.labels)),
+                    "positive_days": int(sequences.labels.sum()),
+                    "prevalence": float(sequences.labels.mean()),
+                    "events": int(events["actual_events"]),
+                    "first_target_date": sequences.target_dates.min().date().isoformat(),
+                    "last_target_date": sequences.target_dates.max().date().isoformat(),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def rolling_origin_count_table(config: dict[str, Any]) -> pd.DataFrame:
+    """Reconstruct manuscript-facing split counts for every temporal fold."""
+
+    from .experiment import read_labeled_dataset
+
+    base_frame = read_labeled_dataset(config)
+    rows = []
+    folds = generate_rolling_origin_folds(
+        base_frame.index,
+        config["evaluation"]["rolling_origin"],
+    )
+    for fold in folds:
+        fold_frame, threshold = relabel_for_fold(base_frame, fold, config)
+        counts = fold_sequence_counts(fold_frame, config)
+        counts.insert(0, "target_threshold", threshold)
+        counts.insert(0, "test_end", fold.test_end.date().isoformat())
+        counts.insert(0, "validation_end", fold.validation_end.date().isoformat())
+        counts.insert(0, "train_end", fold.train_end.date().isoformat())
+        counts.insert(0, "fold", fold.name)
+        rows.append(counts)
+    return pd.concat(rows, ignore_index=True)
+
+
 def run_rolling_origin(
     config: dict[str, Any],
     smoke_test: bool = False,
@@ -129,6 +192,7 @@ def run_rolling_origin(
     )
     metric_frames = []
     threshold_rows = []
+    count_frames = []
     for fold in folds:
         fold_frame, threshold = relabel_for_fold(base_frame, fold, config)
         fold_config = copy.deepcopy(config)
@@ -139,6 +203,9 @@ def run_rolling_origin(
         }
         if smoke_test:
             fold_config = smoke_test_config(fold_config)
+        fold_counts = fold_sequence_counts(fold_frame, fold_config)
+        fold_counts.insert(0, "fold", fold.name)
+        count_frames.append(fold_counts)
         outputs = run_experiment(
             fold_config,
             frame=fold_frame,
@@ -163,6 +230,7 @@ def run_rolling_origin(
     metrics_path = table_directory / "rolling_origin_metrics.csv"
     summary_path = table_directory / "rolling_origin_summary.csv"
     threshold_path = table_directory / "rolling_origin_thresholds.csv"
+    count_path = table_directory / "rolling_origin_counts.csv"
     all_metrics = pd.concat(metric_frames, ignore_index=True)
     all_metrics.to_csv(metrics_path, index=False)
     summary = summarize_metrics(all_metrics)
@@ -179,4 +247,5 @@ def run_rolling_origin(
     )
     summary.to_csv(summary_path, index=False)
     pd.DataFrame(threshold_rows).to_csv(threshold_path, index=False)
+    pd.concat(count_frames, ignore_index=True).to_csv(count_path, index=False)
     return metrics_path, summary_path

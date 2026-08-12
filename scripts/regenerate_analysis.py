@@ -23,19 +23,31 @@ if str(SRC_DIRECTORY) not in sys.path:
 
 from hardinge_high_flow.config import load_config
 from hardinge_high_flow.evaluation import SigmoidCalibrator
-from hardinge_high_flow.experiment import read_labeled_dataset
+from hardinge_high_flow.experiment import (
+    _configured_validation_partitions,
+    _paired_comparisons,
+    read_labeled_dataset,
+)
 from hardinge_high_flow.features import create_sequences, prepare_features
-from hardinge_high_flow.interpretability import grouped_permutation_importance
+from hardinge_high_flow.interpretability import (
+    grouped_permutation_importance,
+    hydrometeorological_feature_groups,
+)
 from hardinge_high_flow.plotting import (
     configure_figure_style,
     generate_publication_figures,
     plot_permutation_importance,
 )
 from hardinge_high_flow.reporting import (
+    add_multiple_comparison_control,
+    calibration_diagnostic_table,
     canonicalize_metric_names,
     diagnostic_tables,
+    event_definition_sensitivity,
+    leave_one_year_out_sensitivity,
     summarize_metrics,
 )
+from hardinge_high_flow.validation import rolling_origin_count_table
 
 LOGGER = logging.getLogger("regenerate_analysis")
 
@@ -124,11 +136,38 @@ def _regenerate_namespace(
         _write_table(frame, path)
     written.extend(diagnostic_paths)
 
-    for name in ("paired_bootstrap.csv", "learning_curves.csv"):
-        path = table_directory / name
-        if path.is_file():
-            _write_table(canonicalize_metric_names(pd.read_csv(path)), path)
-            written.append(path)
+    sensitivity_tables = (
+        event_definition_sensitivity(predictions, config),
+        leave_one_year_out_sensitivity(predictions, config),
+        calibration_diagnostic_table(predictions, config),
+    )
+    sensitivity_paths = (
+        table_directory / "event_definition_sensitivity.csv",
+        table_directory / "leave_one_year_out_sensitivity.csv",
+        table_directory / "calibration_diagnostics.csv",
+    )
+    for frame, path in zip(
+        sensitivity_tables,
+        sensitivity_paths,
+        strict=True,
+    ):
+        _write_table(frame, path)
+    written.extend(sensitivity_paths)
+
+    paired_path = table_directory / "paired_bootstrap.csv"
+    paired = add_multiple_comparison_control(
+        _paired_comparisons(predictions, config)
+    )
+    _write_table(paired, paired_path)
+    written.append(paired_path)
+
+    learning_curve_path = table_directory / "learning_curves.csv"
+    if learning_curve_path.is_file():
+        learning_curves = canonicalize_metric_names(
+            pd.read_csv(learning_curve_path)
+        )
+        _write_table(learning_curves, learning_curve_path)
+        written.append(learning_curve_path)
 
     create_figures = not relative.parts or relative.parts[0] == "ablations"
     if not create_figures:
@@ -147,9 +186,19 @@ def _regenerate_namespace(
 def _regenerate_rolling_summary(config: dict[str, Any]) -> list[Path]:
     table_directory = PROJECT_ROOT / config["paths"]["tables"]
     metrics_path = table_directory / "rolling_origin_metrics.csv"
-    if not metrics_path.is_file():
+    fold_paths = sorted(
+        (table_directory / "rolling_origin").glob(
+            "fold_*/metrics_detailed.csv"
+        )
+    )
+    if not fold_paths:
         return []
-    metrics = canonicalize_metric_names(pd.read_csv(metrics_path))
+    fold_frames = []
+    for path in fold_paths:
+        frame = canonicalize_metric_names(pd.read_csv(path))
+        frame.insert(0, "fold", path.parent.name)
+        fold_frames.append(frame)
+    metrics = pd.concat(fold_frames, ignore_index=True)
     _write_table(metrics, metrics_path)
     summary = summarize_metrics(metrics)
     fold_counts = (
@@ -165,7 +214,9 @@ def _regenerate_rolling_summary(config: dict[str, Any]) -> list[Path]:
     )
     summary_path = table_directory / "rolling_origin_summary.csv"
     _write_table(summary, summary_path)
-    return [metrics_path, summary_path]
+    counts_path = table_directory / "rolling_origin_counts.csv"
+    _write_table(rolling_origin_count_table(config), counts_path)
+    return [metrics_path, summary_path, counts_path]
 
 
 def _calibrated_predictor(bundle: dict[str, Any]):
@@ -200,9 +251,18 @@ def _random_forest_importance(
     for horizon in map(int, config["experiment"]["horizons"]):
         sequences = create_sequences(
             features,
-            "test",
+            "validation",
             int(config["experiment"]["sequence_length"]),
             horizon,
+        )
+        _, importance_indices = _configured_validation_partitions(
+            sequences.labels,
+            config,
+        )
+        importance_inputs = sequences.inputs[importance_indices]
+        importance_labels = sequences.labels[importance_indices]
+        feature_groups = hydrometeorological_feature_groups(
+            features.feature_names
         )
         for fitted_seed in map(int, config["experiment"]["seeds"]):
             path = model_directory / f"random_forest_h{horizon}_seed{fitted_seed}.joblib"
@@ -211,12 +271,14 @@ def _random_forest_importance(
             bundle = joblib.load(path)
             importance = grouped_permutation_importance(
                 _calibrated_predictor(bundle),
-                sequences.inputs,
-                sequences.labels,
+                importance_inputs,
+                importance_labels,
                 features.feature_names,
                 repeats=repeats,
                 seed=horizon * 1_000_000 + fitted_seed,
+                feature_groups=feature_groups,
             )
+            importance.insert(0, "evaluation_split", "late_validation_block")
             importance.insert(0, "fitted_seed", fitted_seed)
             importance.insert(0, "horizon_days", horizon)
             importance.insert(0, "model", "random_forest")

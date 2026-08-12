@@ -15,6 +15,8 @@ def test_default_config_loads() -> None:
     config = load_config(DEFAULT_CONFIG)
     assert config["target"]["source"] == "glofas_proxy"
     assert config["experiment"]["horizons"] == [1, 3, 5, 7]
+    assert config["evaluation"]["event_gap_days"] == 0
+    assert config["evaluation"]["event_gap_sensitivity_days"] == [0, 1, 2]
     assert resolve_project_path(config, "data/processed").is_absolute()
 
 

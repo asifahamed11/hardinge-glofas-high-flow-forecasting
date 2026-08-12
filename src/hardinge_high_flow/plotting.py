@@ -152,13 +152,18 @@ def _configured_models(
     return selected or sorted(available)
 
 
-def _representative_predictions(
+def _illustrative_predictions(
     predictions: pd.DataFrame,
     config: dict[str, Any],
 ) -> pd.DataFrame:
-    """Select one evaluated seed per model without averaging thresholds."""
+    """Select the explicitly declared seed used in illustrative diagnostics."""
 
-    requested_seed = int(config["figures"].get("representative_seed", 42))
+    requested_seed = int(
+        config["figures"].get(
+            "illustrative_seed",
+            config["figures"].get("representative_seed", 42),
+        )
+    )
     frames = []
     for _, group in predictions.groupby("model", observed=True):
         seeds = sorted(group["seed"].astype(int).unique())
@@ -222,23 +227,32 @@ def plot_horizon_skill(
         axis.set_ylim(0, 1.02)
         axis.grid(axis="y", color="#D9D9D9", linewidth=0.5)
         axis.text(
-            0.01,
-            0.98,
+            -0.10,
+            1.04,
             panel,
             transform=axis.transAxes,
             fontweight="bold",
-            va="top",
+            ha="left",
+            va="bottom",
+            clip_on=False,
         )
     handles, labels = axes[0].get_legend_handles_labels()
     figure.legend(
         handles,
         labels,
         loc="lower center",
-        bbox_to_anchor=(0.5, -0.01),
+        bbox_to_anchor=(0.5, 0.015),
         ncol=min(3, len(labels)),
         frameon=False,
     )
-    figure.subplots_adjust(bottom=0.27, wspace=0.32)
+    figure.text(
+        0.5,
+        0.145,
+        "Error bars show ±1 SD across fitted seeds (algorithmic variability).",
+        ha="center",
+        fontsize=max(6, float(config["figures"]["base_font_size"]) - 1),
+    )
+    figure.subplots_adjust(bottom=0.37, top=0.89, wspace=0.32)
     return save_figure(figure, "Fig1_skill_by_horizon", output_directory, config)
 
 
@@ -247,12 +261,12 @@ def plot_precision_recall(
     output_directory: Path,
     config: dict[str, Any],
 ) -> list[Path]:
-    representative = _representative_predictions(predictions, config)
-    models = _configured_models(representative, config, "main_models")
-    horizon = int(representative["horizon_days"].min())
-    subset = representative[
-        (representative["horizon_days"] == horizon)
-        & representative["model"].isin(models)
+    illustrative = _illustrative_predictions(predictions, config)
+    models = _configured_models(illustrative, config, "main_models")
+    horizon = int(illustrative["horizon_days"].min())
+    subset = illustrative[
+        (illustrative["horizon_days"] == horizon)
+        & illustrative["model"].isin(models)
     ]
     width = float(config["figures"]["single_column_width_inches"])
     figure, axis = plt.subplots(figsize=(width, width * 0.82))
@@ -305,12 +319,12 @@ def plot_reliability(
     output_directory: Path,
     config: dict[str, Any],
 ) -> list[Path]:
-    representative = _representative_predictions(predictions, config)
-    models = _configured_models(representative, config, "calibrated_models")
-    horizon = int(representative["horizon_days"].min())
-    subset = representative[
-        (representative["horizon_days"] == horizon)
-        & representative["model"].isin(models)
+    illustrative = _illustrative_predictions(predictions, config)
+    models = _configured_models(illustrative, config, "calibrated_models")
+    horizon = int(illustrative["horizon_days"].min())
+    subset = illustrative[
+        (illustrative["horizon_days"] == horizon)
+        & illustrative["model"].isin(models)
     ]
     width = float(config["figures"]["single_column_width_inches"])
     figure, axis = plt.subplots(figsize=(width, width * 0.82))
@@ -324,13 +338,41 @@ def plot_reliability(
             model_data["probability"].to_numpy(),
             int(config["evaluation"]["reliability_bins"]),
         )
+        lower_error = np.clip(
+            points["observed_fraction"] - points["observed_ci_low"],
+            0,
+            None,
+        )
+        upper_error = np.clip(
+            points["observed_ci_high"] - points["observed_fraction"],
+            0,
+            None,
+        )
+        axis.errorbar(
+            points["mean_probability"],
+            points["observed_fraction"],
+            yerr=np.vstack([lower_error, upper_error]),
+            fmt="none",
+            ecolor=colors[model],
+            elinewidth=0.7,
+            capsize=1.5,
+        )
         axis.plot(
             points["mean_probability"],
             points["observed_fraction"],
-            marker=MARKERS[model],
             color=colors[model],
             linestyle=LINE_STYLES[model],
             label=DISPLAY_NAMES[model],
+        )
+        axis.scatter(
+            points["mean_probability"],
+            points["observed_fraction"],
+            s=np.clip(points["count"].to_numpy(dtype=float), 12, 75),
+            marker=MARKERS[model],
+            color=colors[model],
+            edgecolor="white",
+            linewidth=0.35,
+            zorder=3,
         )
     axis.plot([0, 1], [0, 1], color="#666666", linestyle="--", linewidth=0.9)
     axis.set_xlabel("Predicted probability")
@@ -338,13 +380,24 @@ def plot_reliability(
     axis.set_xlim(0, 1)
     axis.set_ylim(0, 1.02)
     axis.grid(color="#E1E1E1", linewidth=0.5)
-    axis.legend(
+    handles, labels = axis.get_legend_handles_labels()
+    figure.legend(
+        handles,
+        labels,
         frameon=False,
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.18),
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.015),
         ncol=2,
     )
-    figure.subplots_adjust(bottom=0.37)
+    seed = int(config["figures"]["illustrative_seed"])
+    axis.set_title(
+        f"Illustrative seed {seed}; marker area = bin count; "
+        "bars = Wilson 95% intervals",
+        loc="left",
+        fontsize=max(5.0, float(config["figures"]["base_font_size"]) - 3),
+        pad=5,
+    )
+    figure.subplots_adjust(bottom=0.32)
     return save_figure(
         figure,
         f"Fig3_reliability_h{horizon}",
@@ -358,10 +411,10 @@ def plot_event_timeline(
     output_directory: Path,
     config: dict[str, Any],
 ) -> list[Path]:
-    representative = _representative_predictions(predictions, config)
-    models = _configured_models(representative, config, "event_models")
-    horizon = int(representative["horizon_days"].min())
-    horizon_data = representative[representative["horizon_days"] == horizon]
+    illustrative = _illustrative_predictions(predictions, config)
+    models = _configured_models(illustrative, config, "event_models")
+    horizon = int(illustrative["horizon_days"].min())
+    horizon_data = illustrative[illustrative["horizon_days"] == horizon]
     reference_model = models[0]
     reference = horizon_data[horizon_data["model"] == reference_model].copy()
     positive_by_year = reference.groupby(
@@ -461,12 +514,12 @@ def plot_confusion_matrices(
     output_directory: Path,
     config: dict[str, Any],
 ) -> list[Path]:
-    representative = _representative_predictions(predictions, config)
-    models = _configured_models(representative, config, "confusion_models")
-    horizon = int(representative["horizon_days"].min())
-    subset = representative[
-        (representative["horizon_days"] == horizon)
-        & representative["model"].isin(models)
+    illustrative = _illustrative_predictions(predictions, config)
+    models = _configured_models(illustrative, config, "confusion_models")
+    horizon = int(illustrative["horizon_days"].min())
+    subset = illustrative[
+        (illustrative["horizon_days"] == horizon)
+        & illustrative["model"].isin(models)
     ]
     columns = min(2, len(models))
     rows = int(np.ceil(len(models) / columns))
@@ -543,56 +596,95 @@ def plot_permutation_importance(
     usable = {name: frame for name, frame in importance_frames.items() if not frame.empty}
     if not usable:
         return []
+    horizons = sorted(
+        {
+            int(horizon)
+            for frame in usable.values()
+            for horizon in frame["horizon_days"].unique()
+        }
+    )
     width = float(config["figures"]["double_column_width_inches"])
     figure, axes = plt.subplots(
-        1,
         len(usable),
-        figsize=(width, width * 0.62),
+        len(horizons),
+        figsize=(width, width * (0.40 + 0.26 * len(usable))),
         squeeze=False,
+        sharex=True,
     )
     colors = [
         config["figures"]["palette"]["bluish_green"],
         config["figures"]["palette"]["blue"],
     ]
-    for panel_index, ((name, frame), axis) in enumerate(
-        zip(usable.items(), axes.ravel(), strict=True)
-    ):
-        grouped = (
-            frame.groupby("feature", observed=True)["importance"]
-            .agg(["mean", "std"])
-            .fillna(0)
-            .nlargest(10, "mean")
-            .sort_values("mean")
-        )
-        positions = np.arange(len(grouped))
-        axis.barh(
-            positions,
-            grouped["mean"],
-            xerr=grouped["std"],
-            color=colors[panel_index % len(colors)],
-            error_kw={"elinewidth": 0.7, "capsize": 1.5},
-        )
-        axis.set_yticks(positions, [_feature_label(value) for value in grouped.index])
-        axis.axvline(0, color="#555555", linewidth=0.7)
-        axis.set_xlabel("Decrease in average precision")
-        axis.grid(axis="x", color="#E1E1E1", linewidth=0.5)
-        axis.text(
-            0.01,
-            0.99,
-            chr(ord("a") + panel_index),
-            transform=axis.transAxes,
-            fontweight="bold",
-            va="top",
-        )
-        axis.text(
-            0.99,
-            0.02,
-            name,
-            transform=axis.transAxes,
-            ha="right",
-            va="bottom",
-        )
-    figure.subplots_adjust(wspace=0.65, left=0.19, right=0.98, bottom=0.13)
+    panel_index = 0
+    for row_index, (name, frame) in enumerate(usable.items()):
+        for column_index, horizon in enumerate(horizons):
+            axis = axes[row_index, column_index]
+            horizon_data = frame[frame["horizon_days"] == horizon]
+            grouped = (
+                horizon_data.groupby("feature", observed=True)["importance"]
+                .agg(["mean", "std"])
+                .fillna(0)
+                .sort_values("mean")
+            )
+            positions = np.arange(len(grouped))
+            axis.barh(
+                positions,
+                grouped["mean"],
+                xerr=grouped["std"],
+                color=colors[row_index % len(colors)],
+                error_kw={"elinewidth": 0.55, "capsize": 1.0},
+            )
+            labels = (
+                [_feature_label(value) for value in grouped.index]
+                if column_index == 0
+                else [""] * len(grouped)
+            )
+            axis.set_yticks(positions, labels)
+            axis.axvline(0, color="#555555", linewidth=0.7)
+            axis.grid(axis="x", color="#E1E1E1", linewidth=0.5)
+            axis.text(
+                0.0,
+                1.04,
+                chr(ord("a") + panel_index),
+                transform=axis.transAxes,
+                fontweight="bold",
+                ha="left",
+                va="bottom",
+                clip_on=False,
+            )
+            if row_index == 0:
+                axis.set_title(f"{horizon}-day horizon")
+            if row_index == len(usable) - 1:
+                axis.set_xlabel("AP decrease")
+            if column_index == len(horizons) - 1:
+                axis.text(
+                    1.02,
+                    0.5,
+                    name,
+                    transform=axis.transAxes,
+                    rotation=90,
+                    va="center",
+                    ha="left",
+                )
+            panel_index += 1
+    figure.text(
+        0.5,
+        0.01,
+        (
+            "Predictor-family block permutation on the late validation block; "
+            "error bars show variability across fitted seeds and repeats."
+        ),
+        ha="center",
+        fontsize=max(6, float(config["figures"]["base_font_size"]) - 1),
+    )
+    figure.subplots_adjust(
+        hspace=0.30,
+        wspace=0.14,
+        left=0.18,
+        right=0.93,
+        bottom=0.10,
+        top=0.92,
+    )
     return save_figure(
         figure,
         "Fig6_grouped_permutation_importance",
